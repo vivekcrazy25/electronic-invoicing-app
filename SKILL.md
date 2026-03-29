@@ -1699,3 +1699,198 @@ package.json
 - ✅ DO show toast notifications for barcode scan success/failure
 - ✅ DO allow Owner to override any permission per user (not just by role)
 - ✅ DO use `Ctrl+K` / `Cmd+K` as global keyboard shortcut to open search
+
+---
+
+## 17. Gap Analysis Findings & Planned Changes (v2 — March 2026)
+
+A full comparison of this spec against the live codebase revealed the following gaps.
+All items below are **required** for the next implementation pass.
+
+---
+
+### 17.1 Schema Additions
+
+The following columns and tables must be added (use `ALTER TABLE … ADD COLUMN IF NOT EXISTS` in migrations):
+
+#### users — add branch_id
+```sql
+ALTER TABLE users ADD COLUMN branch_id INTEGER REFERENCES branches(id);
+```
+
+#### products — add branch_id
+```sql
+ALTER TABLE products ADD COLUMN branch_id INTEGER REFERENCES branches(id);
+```
+
+#### expenses — add branch_id
+```sql
+ALTER TABLE expenses ADD COLUMN branch_id INTEGER REFERENCES branches(id);
+```
+
+#### banking_transactions — add branch_id
+```sql
+ALTER TABLE banking_transactions ADD COLUMN branch_id INTEGER REFERENCES branches(id);
+```
+
+#### customers — add branch_id
+```sql
+ALTER TABLE customers ADD COLUMN branch_id INTEGER REFERENCES branches(id);
+```
+
+#### branches — add code & contact columns
+```sql
+ALTER TABLE branches ADD COLUMN code TEXT;
+ALTER TABLE branches ADD COLUMN contact TEXT;
+```
+
+#### New table: `app_settings` (currency, language)
+```sql
+CREATE TABLE IF NOT EXISTS app_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
+-- seed defaults:
+-- INSERT OR IGNORE INTO app_settings VALUES ('currency', 'INR');
+-- INSERT OR IGNORE INTO app_settings VALUES ('currency_symbol', '₹');
+-- INSERT OR IGNORE INTO app_settings VALUES ('language', 'en');
+-- INSERT OR IGNORE INTO app_settings VALUES ('date_format', 'DD/MM/YYYY');
+```
+
+---
+
+### 17.2 Invoice Status Machine (CRITICAL)
+
+The correct invoice status values are:
+```
+'Draft' → 'Active' → 'Credit' (if unpaid) | 'Paid' (if paid)
+         → 'return_window' (within 15 days of Active/Paid/Credit)
+         → 'Completed' (auto-lock after 15 days)
+```
+
+- `'return_window'` must be set when an invoice transitions to Active/Paid/Credit. It means the invoice is still editable for returns.
+- `'Completed'` must be auto-set by a background interval check in `main.js` that runs every hour.
+- Once `'Completed'`, the invoice is READ-ONLY. All edit/return buttons must be hidden.
+- The `returns:create` IPC handler must validate: `julianday('now') - julianday(invoice_date) <= 15`.
+
+---
+
+### 17.3 New IPC Handlers Required
+
+Add all of the following to `ipcHandlers.js`:
+
+| Channel | Description |
+|---------|-------------|
+| `vendors:update` | Edit existing vendor (all fields) |
+| `branches:create` | Create new branch |
+| `branches:update` | Edit branch name/code/address/contact |
+| `branches:delete` | Soft-delete branch (is_active=0) |
+| `purchases:createReturn` | Create purchase return, adjust stock |
+| `reports:expenses` | Expense report with from/to date range and branch filter |
+| `settings:getAll` | Return all rows from app_settings as key-value map |
+| `settings:saveAll` | Upsert multiple key-value rows in app_settings |
+| `settings:uploadLogo` | Copy logo file to userData dir, save logo_path |
+| `settings:restoreBackup` | Copy backup SQLite file back into place |
+| `products:importCSV` | Bulk-upsert products from parsed CSV/XLSX array |
+| `products:exportCSV` | Return all products as array for XLSX export |
+
+**Server-side permission enforcement pattern** (add to EVERY handler that writes data):
+```js
+// at top of handler, after const db = getDb():
+// (pass { userId, role } in every IPC call from frontend)
+// if (role !== 'Owner') {
+//   const allowed = checkPermission(db, userId, role, 'module', 'action');
+//   if (!allowed) return { success: false, error: 'Permission denied' };
+// }
+```
+
+---
+
+### 17.4 Branch-Based Data Rules
+
+**ALL queries that return lists must accept a `branch_id` parameter:**
+- If `branch_id` is provided (and user is not Owner/Super-Admin viewing all), add `WHERE … AND table.branch_id = ?`
+- Dashboard stats must be filtered by the user's branch unless they are Owner (who sees all)
+- Reports must expose a branch selector dropdown: `All Branches | Branch 1 | Branch 2 | …`
+
+**Auth context must expose `user.branch_id`** so every page can pass it to IPC calls.
+
+---
+
+### 17.5 Settings Page — New Sections
+
+The Settings page must have **5 tabs** (not 4):
+1. Company Profile ← update logo upload button to use `settings:uploadLogo`
+2. Account Management ← unchanged
+3. User Management ← add Branch dropdown to add/edit user form
+4. Branch Management ← **NEW TAB**: list branches, add/edit/delete via `branches:*` handlers
+5. Backup & Restore ← wire Restore button to `settings:restoreBackup`
+
+Below the 5 tabs, add a sixth settings group accessible from a link/tab:
+6. Currency & Language ← dropdowns for currency and language, saved via `settings:saveAll`
+
+---
+
+### 17.6 Reports Page — New Tab
+
+Add **Expense Report** tab to the Reports page:
+- Filters: From date, To date, Branch (All / per branch), Category (All / per category)
+- Table: Expense ID | Title | Category | Amount | Date | Paid From
+- Summary row: Total expenses in period
+- Export to Excel button
+
+---
+
+### 17.7 Banking Auto-Linkage
+
+When any of the following events occurs, **automatically** insert a `banking_transactions` row:
+- Sale finalized (status → Paid or Active with Cash/Card/UPI): Debit from account = payment_mode account
+- Expense created: Debit from `account_id`
+- Vendor payment (paybills:create): Debit from payment account
+
+The existing manual "Add Transaction" in Banking remains for adjustments.
+
+---
+
+### 17.8 Inventory — Import / Export
+
+On the Inventory page, add two buttons to the header row:
+- **Import CSV** — opens a file dialog (via `dialog.showOpenDialog`), reads the file, calls `products:importCSV`
+- **Export** — calls `products:exportCSV`, then uses `xlsx` to write to file via `dialog.showSaveDialog`
+
+CSV format for import:
+```
+name,category,purchase_price,selling_price,current_stock,reorder_level,barcode,unit,hsn_code
+```
+
+---
+
+### 17.9 Vendor Edit
+
+The vendor row kebab menu must include an **Edit** action that opens the existing Add Vendor modal pre-filled.
+The `vendors:update` handler updates all vendor fields by `id`.
+
+---
+
+### 17.10 Purchase Return Flow
+
+In VendorsPurchases, when a user selects "Return" on a purchase invoice:
+1. A modal lists the purchased items with a `return_qty` input per item
+2. On save, calls `purchases:createReturn` which:
+   - Inserts into `purchase_returns` and `purchase_return_items`
+   - Reduces `current_stock` by `return_qty` for each returned item
+   - Updates `purchase_invoices.status` appropriately
+3. Stock status recalculates (Good / Low / Critical)
+
+---
+
+### 17.11 Additional Don'ts (v2)
+
+- ❌ Do NOT run any `getAll` query without passing `branch_id` (unless user is Owner)
+- ❌ Do NOT allow return/exchange on invoices older than 15 days — reject in both UI and IPC handler
+- ❌ Do NOT allow editing of `Completed` invoices — hide all edit/return buttons when status = Completed
+- ❌ Do NOT allow branches to be deleted if they have linked invoices/products — show error instead
+- ✅ DO auto-create banking_transactions entries on every sale, expense, and vendor payment
+- ✅ DO validate permissions server-side in every write IPC handler
+- ✅ DO show branch selector in Reports header, filter all report data by selected branch
+- ✅ DO use `julianday()` SQLite function for 15-day return window validation

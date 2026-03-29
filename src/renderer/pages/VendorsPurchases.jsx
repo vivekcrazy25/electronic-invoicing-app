@@ -242,6 +242,127 @@ function PurchaseInvoiceForm({ vendors, onClose, onSaved }) {
   );
 }
 
+// ── PurchaseReturnModal ────────────────────────────────────────────────────
+function PurchaseReturnModal({ purchase, onClose, onDone }) {
+  const [items, setItems] = useState([]);
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    // Load purchase items
+    if (purchase._items && purchase._items.length > 0) {
+      setItems(purchase._items.map(i => ({ ...i, return_qty: 0 })));
+    } else {
+      // Attempt to load items via IPC
+      window.electron.invoke('purchases:getItems', { id: purchase.id }).then(loadedItems => {
+        if (Array.isArray(loadedItems) && loadedItems.length > 0) {
+          setItems(loadedItems.map(i => ({ ...i, return_qty: 0 })));
+        }
+      }).catch(() => {
+        // If no items available, show empty state
+      });
+    }
+  }, [purchase]);
+
+  const returnTotal = items.reduce((s, i) => s + (i.return_qty * (i.price || 0)), 0);
+
+  async function submit() {
+    const returnItems = items.filter(i => i.return_qty > 0);
+    if (returnItems.length === 0) { toast.error('Enter return quantity for at least one item'); return; }
+    setSaving(true);
+    const payload = {
+      po_number: purchase.po_number,
+      vendor_id: purchase.vendor_id,
+      vendor_name: purchase.vendor_name,
+      original_invoice_id: purchase.id,
+      purchased_qty: items.reduce((s, i) => s + i.qty, 0),
+      return_qty: returnItems.reduce((s, i) => s + i.return_qty, 0),
+      return_total: returnTotal,
+      return_reason: reason,
+      items: returnItems.map(i => ({
+        product_id: i.product_id,
+        item_name: i.product_name,
+        sku: i.product_code || '',
+        purchased_qty: i.qty,
+        return_qty: i.return_qty,
+        purchase_price: i.price,
+      })),
+    };
+    const r = await window.electron.invoke('purchases:createReturn', payload);
+    setSaving(false);
+    if (r.success) { toast.success('Purchase return submitted'); onDone(); onClose(); }
+    else toast.error(r.error || 'Failed to submit return');
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: '#fff', borderRadius: 12, padding: 32, width: 700, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 18 }}>Purchase Return</div>
+            <div style={{ fontSize: 13, color: '#6b7280' }}>PO: {purchase.po_number} · {purchase.vendor_name}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}>✕</button>
+        </div>
+
+        {items.length === 0 ? (
+          <div style={{ textAlign: 'center', color: '#9ca3af', padding: 40 }}>
+            <div style={{ fontSize: 14 }}>No items found for this purchase</div>
+          </div>
+        ) : (
+          <>
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 20 }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', fontSize: 13 }}>
+                  <th style={{ padding: '10px 12px', textAlign: 'left' }}>Product</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>Purchased Qty</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>Unit Price</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'center', width: 120 }}>Return Qty</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>Return Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '10px 12px' }}>{item.product_name}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right' }}>{item.qty}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right' }}>₹{item.price?.toLocaleString('en-IN')}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                      <input type="number" min={0} max={item.qty} value={item.return_qty}
+                        onChange={e => {
+                          const v = Math.min(parseInt(e.target.value) || 0, item.qty);
+                          setItems(prev => prev.map((i, ii) => ii === idx ? { ...i, return_qty: v } : i));
+                        }}
+                        style={{ width: 70, textAlign: 'center', border: '1px solid #d1d5db', borderRadius: 6, padding: '4px 8px' }}
+                      />
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', color: '#ef4444' }}>
+                      ₹{(item.return_qty * (item.price || 0)).toLocaleString('en-IN')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={{ marginBottom: 16 }}>
+              <label className="form-label">Return Reason</label>
+              <input className="form-input" value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Damaged goods, wrong items..." />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Return Total: <span style={{ color: '#ef4444' }}>₹{returnTotal.toLocaleString('en-IN')}</span></div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button className="btn btn-outline" onClick={onClose}>Cancel</button>
+                <button className="btn btn-black" onClick={submit} disabled={saving}>{saving ? 'Submitting...' : 'Submit Return'}</button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── PayBillModal ───────────────────────────────────────────────────────────
 function PayBillModal({ vendors, purchases, onClose, onSaved }) {
   const [vendorId, setVendorId] = useState('');
@@ -356,7 +477,10 @@ export default function VendorsPurchases() {
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [showAddPurchase, setShowAddPurchase] = useState(false);
   const [showPayBill, setShowPayBill] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [returnPurchase, setReturnPurchase] = useState(null);
   const [vendorForm, setVendorForm] = useState({ vendor_name: '', company_name: '', email: '', phone: '', street_address: '', city: '', province_state: '', postal_code: '', account_name: '', account_number: '' });
+  const [editingVendor, setEditingVendor] = useState(null);
   const { can } = useAuth();
 
   useEffect(() => { loadAll(); }, [search, activeTab]);
@@ -369,15 +493,40 @@ export default function VendorsPurchases() {
 
   async function saveVendor() {
     if (!vendorForm.vendor_name.trim()) { toast.error('Vendor name is required'); return; }
-    const result = await window.electron.invoke('vendors:create', vendorForm);
+
+    let result;
+    if (editingVendor) {
+      result = await window.electron.invoke('vendors:update', { id: editingVendor.id, ...vendorForm });
+    } else {
+      result = await window.electron.invoke('vendors:create', vendorForm);
+    }
+
     if (result.success) {
-      toast.success('Vendor saved!');
+      toast.success(editingVendor ? 'Vendor updated!' : 'Vendor saved!');
       setShowAddVendor(false);
+      setEditingVendor(null);
       setVendorForm({ vendor_name: '', company_name: '', email: '', phone: '', street_address: '', city: '', province_state: '', postal_code: '', account_name: '', account_number: '' });
       loadAll();
     } else {
       toast.error(result.error || 'Failed to save vendor');
     }
+  }
+
+  function openEditVendor(vendor) {
+    setEditingVendor(vendor);
+    setVendorForm({
+      vendor_name: vendor.vendor_name,
+      company_name: vendor.company_name || '',
+      email: vendor.email || '',
+      phone: vendor.phone || '',
+      street_address: vendor.street_address || '',
+      city: vendor.city || '',
+      province_state: vendor.province_state || '',
+      postal_code: vendor.postal_code || '',
+      account_name: vendor.account_name || '',
+      account_number: vendor.account_number || '',
+    });
+    setShowAddVendor(true);
   }
 
   async function deleteVendor(id) {
@@ -392,6 +541,12 @@ export default function VendorsPurchases() {
     const result = await window.electron.invoke('purchases:delete', { id });
     if (result.success) { toast.success('Deleted'); loadAll(); }
     else toast.error(result.error || 'Failed');
+  }
+
+  async function openReturnModal(purchase) {
+    const items = await window.electron.invoke('purchases:getItems', { id: purchase.id }).catch(() => []);
+    setReturnPurchase({ ...purchase, _items: items });
+    setShowReturnModal(true);
   }
 
   const setVF = (field, val) => setVendorForm(prev => ({ ...prev, [field]: val }));
@@ -417,7 +572,7 @@ export default function VendorsPurchases() {
               <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>🔍</span>
               <input className="form-input" style={{ paddingLeft: 32, width: 280 }} placeholder="Search by Vendor or Company name" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            {can('vendors', 'create') && <button className="btn btn-black filters-bar-right" onClick={() => setShowAddVendor(true)}>+ Add Vendor</button>}
+            {can('vendors', 'create') && <button className="btn btn-black filters-bar-right" onClick={() => { setEditingVendor(null); setVendorForm({ vendor_name: '', company_name: '', email: '', phone: '', street_address: '', city: '', province_state: '', postal_code: '', account_name: '', account_number: '' }); setShowAddVendor(true); }}>+ Add Vendor</button>}
           </div>
           <div className="table-container">
             <table className="data-table">
@@ -435,6 +590,7 @@ export default function VendorsPurchases() {
                     <td><span className={`badge ${v.status === 'Active' ? 'badge-green' : 'badge-grey'}`}>{v.status || 'Active'}</span></td>
                     <td>
                       <KebabMenu items={[
+                        { label: 'Edit', action: () => openEditVendor(v) },
                         { label: 'Delete Vendor', danger: true, action: () => deleteVendor(v.id) },
                       ]} />
                     </td>
@@ -448,8 +604,8 @@ export default function VendorsPurchases() {
             <div className="modal-overlay" onClick={() => setShowAddVendor(false)}>
               <div className="modal-card modal-md" onClick={e => e.stopPropagation()}>
                 <button className="modal-close" onClick={() => setShowAddVendor(false)}>✕</button>
-                <div className="modal-title">Add New Vendor</div>
-                <div className="modal-subtitle">Fill in vendor details below</div>
+                <div className="modal-title">{editingVendor ? 'Edit Vendor' : 'Add New Vendor'}</div>
+                <div className="modal-subtitle">{editingVendor ? 'Update vendor details below' : 'Fill in vendor details below'}</div>
 
                 <div style={{ marginBottom: 12, fontWeight: 600, fontSize: 12, color: '#374151' }}>ⓘ GENERAL INFORMATION</div>
                 <div className="form-grid-2">
@@ -474,8 +630,8 @@ export default function VendorsPurchases() {
                 </div>
 
                 <div className="modal-footer">
-                  <button className="btn btn-outline" onClick={() => setShowAddVendor(false)}>Cancel</button>
-                  <button className="btn btn-black" onClick={saveVendor}>Save Vendor</button>
+                  <button className="btn btn-outline" onClick={() => { setShowAddVendor(false); setEditingVendor(null); }}>Cancel</button>
+                  <button className="btn btn-black" onClick={saveVendor}>{editingVendor ? 'Update Vendor' : 'Save Vendor'}</button>
                 </div>
               </div>
             </div>
@@ -514,6 +670,7 @@ export default function VendorsPurchases() {
                     <td><span className={`badge ${p.status === 'Received' ? 'badge-green' : p.status === 'Partial' ? 'badge-orange' : p.status === 'Draft' ? 'badge-grey' : 'badge-blue'}`}>{p.status}</span></td>
                     <td>
                       <KebabMenu items={[
+                        { label: 'Return', action: () => openReturnModal(p) },
                         { label: 'Delete', danger: true, action: () => deletePurchase(p.id) },
                       ]} />
                     </td>
@@ -609,6 +766,15 @@ export default function VendorsPurchases() {
             <PayBillModal vendors={vendors} purchases={purchases} onClose={() => setShowPayBill(false)} onSaved={loadAll} />
           )}
         </>
+      )}
+
+      {/* ── Purchase Return Modal ── */}
+      {showReturnModal && returnPurchase && (
+        <PurchaseReturnModal
+          purchase={returnPurchase}
+          onClose={() => { setShowReturnModal(false); setReturnPurchase(null); }}
+          onDone={loadAll}
+        />
       )}
     </div>
   );

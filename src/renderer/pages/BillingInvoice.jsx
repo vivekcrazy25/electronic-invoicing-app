@@ -4,6 +4,59 @@ import toast from 'react-hot-toast';
 import { useBarcodeGun } from '../hooks/useBarcodeGun';
 import BarcodeScanner from '../components/BarcodeScanner';
 
+// ── InvoiceStartModal ──────────────────────────────────────────────────────
+function InvoiceStartModal({ onClose, onNew, onResume }) {
+  const [drafts, setDrafts] = useState([]);
+  useEffect(() => {
+    window.electron.invoke('invoices:getAll', { status: 'Draft' }).then(d => setDrafts(Array.isArray(d) ? d : []));
+  }, []);
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}>
+      <div style={{ background:'#fff', borderRadius:12, padding:32, width:520, boxShadow:'0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ fontWeight:700, fontSize:20, marginBottom:4 }}>Create Invoice</div>
+        <div style={{ fontSize:13, color:'#6b7280', marginBottom:24 }}>Start a new invoice or continue a saved draft</div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:24 }}>
+          <div onClick={onNew} style={{ border:'2px solid #111', borderRadius:10, padding:20, cursor:'pointer', textAlign:'center' }}
+               onMouseEnter={e => e.currentTarget.style.background='#f8fafc'}
+               onMouseLeave={e => e.currentTarget.style.background='#fff'}>
+            <div style={{ fontSize:28, marginBottom:8 }}>📄</div>
+            <div style={{ fontWeight:700, fontSize:15 }}>Create New</div>
+            <div style={{ fontSize:12, color:'#6b7280' }}>Start a fresh invoice</div>
+          </div>
+          <div style={{ border:'2px solid #f97316', borderRadius:10, padding:20, textAlign:'center', opacity: drafts.length ? 1 : 0.4, cursor: drafts.length ? 'pointer' : 'default' }}>
+            <div style={{ fontSize:28, marginBottom:8 }}>✏️</div>
+            <div style={{ fontWeight:700, fontSize:15 }}>Continue Draft</div>
+            <div style={{ fontSize:12, color:'#6b7280' }}>{drafts.length} draft(s) saved</div>
+          </div>
+        </div>
+
+        {drafts.length > 0 && (
+          <div style={{ marginBottom:20 }}>
+            <div style={{ fontSize:13, fontWeight:600, marginBottom:8, color:'#374151' }}>Saved Drafts:</div>
+            {drafts.map(d => (
+              <div key={d.id} onClick={() => onResume(d)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 14px', border:'1px solid #e5e7eb', borderRadius:8, marginBottom:6, cursor:'pointer' }}
+                   onMouseEnter={e => e.currentTarget.style.background='#f9fafb'}
+                   onMouseLeave={e => e.currentTarget.style.background='#fff'}>
+                <div>
+                  <div style={{ fontWeight:600, fontSize:13 }}>{d.invoice_no || 'Unsaved Draft'}</div>
+                  <div style={{ fontSize:12, color:'#6b7280' }}>{d.customer_name || 'No customer'} · {d.invoice_date}</div>
+                </div>
+                <div style={{ fontWeight:700, color:'#111' }}>₹{d.grand_total?.toLocaleString('en-IN')}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display:'flex', justifyContent:'flex-end' }}>
+          <button className="btn btn-outline" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── KebabMenu ──────────────────────────────────────────────────────────────
 function KebabMenu({ items }) {
   const [open, setOpen] = useState(false);
@@ -33,7 +86,7 @@ function KebabMenu({ items }) {
 }
 
 // ── CreateInvoiceForm ──────────────────────────────────────────────────────
-function CreateInvoiceForm({ onClose, onSaved }) {
+function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
   const [products, setProducts] = useState([]);
   const [branches, setBranches] = useState([]);
   const [sellers, setSellers] = useState([]);
@@ -60,13 +113,35 @@ function CreateInvoiceForm({ onClose, onSaved }) {
   const [discount, setDiscount] = useState(0);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [draftId, setDraftId] = useState(null);
 
   useEffect(() => {
     window.electron.invoke('products:getAll', {}).then(data => setProducts(Array.isArray(data) ? data : []));
     window.electron.invoke('branches:getAll', {}).then(data => setBranches(Array.isArray(data) ? data : []));
     window.electron.invoke('users:getAll', {}).then(data => setSellers(Array.isArray(data) ? data : []));
     window.electron.invoke('customers:getAll', {}).then(data => setCustomers(Array.isArray(data) ? data : []));
-  }, []);
+
+    if (initialDraft && initialDraft.id) {
+      setDraftId(initialDraft.id);
+      setInvoiceDate(initialDraft.invoice_date || new Date().toISOString().slice(0, 10));
+      setDueDate(initialDraft.due_date || '');
+      setBranchId(initialDraft.branch_id || '');
+      setSellerId(initialDraft.seller_id || '');
+      setCustomerName(initialDraft.customer_name || '');
+      setCustomerPhone(initialDraft.customer_phone || '');
+      setCustomerAddress(initialDraft.customer_address || '');
+      setPaymentMode(initialDraft.payment_mode || 'Cash');
+      setSplitCash(initialDraft.split_cash || '');
+      setSplitCard(initialDraft.split_card || '');
+      setIsCreditSale(initialDraft.is_credit_sale ? true : false);
+      setTaxPct(initialDraft.tax_pct || 0);
+      setDiscount(initialDraft.discount || 0);
+      setNotes(initialDraft.notes || '');
+      if (Array.isArray(initialDraft.items)) {
+        setItems(initialDraft.items);
+      }
+    }
+  }, [initialDraft]);
 
   // USB Barcode Gun support — fires when rapid keystrokes detected
   const handleGunScan = useCallback(async (barcode) => {
@@ -149,7 +224,9 @@ function CreateInvoiceForm({ onClose, onSaved }) {
         notes,
         status,
       };
-      const result = await window.electron.invoke('invoices:create', payload);
+      const endpoint = draftId ? 'invoices:update' : 'invoices:create';
+      const invokePayload = draftId ? { id: draftId, ...payload } : payload;
+      const result = await window.electron.invoke(endpoint, invokePayload);
       if (result.success) {
         toast.success(status === 'Draft' ? 'Saved as draft' : 'Invoice created');
         onSaved();
@@ -469,12 +546,14 @@ export default function BillingInvoice() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [showCreate, setShowCreate] = useState(false);
+  const [showStartModal, setShowStartModal] = useState(false);
   const { can } = useAuth();
 
   useEffect(() => { loadInvoices(); }, [search, statusFilter]);
 
   async function loadInvoices() {
     try {
+      await window.electron.invoke('invoices:autoComplete').catch(() => {});
       const data = await window.electron.invoke('invoices:getAll', { status: statusFilter === 'All' ? null : statusFilter, search });
       setInvoices(Array.isArray(data) ? data : []);
     } catch { setInvoices([]); }
@@ -493,15 +572,41 @@ export default function BillingInvoice() {
     else toast.error(result.error || 'Failed');
   }
 
-  const completedInvoices = invoices.filter(inv => inv.status === 'Paid' || inv.status === 'Exchanged');
-  const activeInvoices = invoices.filter(inv => inv.status !== 'Paid' && inv.status !== 'Exchanged');
+  function handleCreateClick() {
+    setShowStartModal(true);
+  }
 
-  if (showCreate) {
+  function handleNewInvoice() {
+    setShowStartModal(false);
+    setShowCreate(true);
+  }
+
+  function handleResumeDraft(draft) {
+    setShowStartModal(false);
+    setShowCreate(draft);
+  }
+
+  const completedInvoices = invoices.filter(inv => inv.status === 'Completed' || inv.status === 'Paid' || inv.status === 'Exchanged');
+  const activeInvoices = invoices.filter(inv => inv.status !== 'Completed' && inv.status !== 'Paid' && inv.status !== 'Exchanged');
+
+  if (showCreate && showCreate !== true) {
+    return <CreateInvoiceForm initialDraft={showCreate} onClose={() => setShowCreate(false)} onSaved={loadInvoices} />;
+  }
+
+  if (showCreate === true) {
     return <CreateInvoiceForm onClose={() => setShowCreate(false)} onSaved={loadInvoices} />;
   }
 
   return (
     <div>
+      {showStartModal && (
+        <InvoiceStartModal
+          onClose={() => setShowStartModal(false)}
+          onNew={handleNewInvoice}
+          onResume={handleResumeDraft}
+        />
+      )}
+
       <div className="page-header">
         <div className="page-title">Billing &amp; Invoice</div>
         <div className="page-subtitle">Manage Bills And Create Sales Invoices</div>
@@ -523,10 +628,10 @@ export default function BillingInvoice() {
               <input className="form-input" style={{ paddingLeft: 32, width: 280 }} placeholder="Search invoice, customers and amounts" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <select className="form-select" style={{ width: 120 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-              <option>All</option><option>Paid</option><option>Draft</option><option>Credit</option>
+              <option>All</option><option>Paid</option><option>Draft</option><option>Credit</option><option>Completed</option>
             </select>
             {activeTab === 'Invoices' && can('billing', 'create') && (
-              <button className="btn btn-black filters-bar-right" onClick={() => setShowCreate(true)}>
+              <button className="btn btn-black filters-bar-right" onClick={handleCreateClick}>
                 + Create Invoice
               </button>
             )}
@@ -557,14 +662,18 @@ export default function BillingInvoice() {
                     <td>{inv.invoice_date}</td>
                     <td>{inv.payment_mode}</td>
                     <td>
-                      <span className={`badge ${inv.status === 'Paid' ? 'badge-green' : inv.status === 'Draft' ? 'badge-grey' : inv.status === 'Credit' ? 'badge-orange' : 'badge-blue'}`}>
-                        {inv.status}
+                      <span className={`badge ${inv.status === 'Paid' || inv.status === 'Active' ? 'badge-green' : inv.status === 'Draft' ? 'badge-grey' : inv.status === 'Credit' ? 'badge-blue' : inv.status === 'Completed' ? 'badge-grey' : 'badge-grey'}`}>
+                        {inv.status === 'Active' ? 'Paid' : inv.status}
                       </span>
                     </td>
                     <td>
                       <KebabMenu items={[
-                        ...(inv.status !== 'Paid' ? [{ label: 'Mark as Paid', action: () => markPaid(inv.id) }] : []),
-                        { label: 'Delete Invoice', danger: true, action: () => deleteInvoice(inv.id) },
+                        { label: 'View', action: () => {} },
+                        ...(inv.status !== 'Completed' ? [
+                          { label: 'Update Payment', action: () => markPaid(inv.id) },
+                          { label: 'Return / Exchange', action: () => {} },
+                        ] : []),
+                        { label: 'Delete', action: () => deleteInvoice(inv.id), danger: true },
                       ]} />
                     </td>
                   </tr>

@@ -37,7 +37,7 @@ function KebabMenu({ items }) {
 }
 
 // ── ItemModal (Add / Edit) ─────────────────────────────────────────────────
-function ItemModal({ product, categories, onClose, onSaved }) {
+function ItemModal({ product, categories, branches, onClose, onSaved }) {
   const isEdit = !!product;
   const [form, setForm] = useState({
     name: product?.name || '',
@@ -51,6 +51,7 @@ function ItemModal({ product, categories, onClose, onSaved }) {
     current_stock: product?.current_stock || '',
     low_stock_threshold: product?.low_stock_threshold || 10,
     description: product?.description || '',
+    branch_id: product?.branch_id || '',
   });
   const [saving, setSaving] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
@@ -131,6 +132,13 @@ function ItemModal({ product, categories, onClose, onSaved }) {
             </select>
           </div>
           <div>
+            <label className="form-label">Branch</label>
+            <select className="form-select" value={form.branch_id} onChange={e => set('branch_id', e.target.value || '')}>
+              <option value="">All Branches (Global)</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="form-label">HSN Code</label>
             <input className="form-input" placeholder="HSN code" value={form.hsn_code} onChange={e => set('hsn_code', e.target.value)} />
           </div>
@@ -181,19 +189,84 @@ export default function InventoryServices() {
   const [catFilter, setCatFilter] = useState('All Categories');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [categories, setCategories] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
   const { can } = useAuth();
 
-  useEffect(() => { loadAll(); }, [search, catFilter, statusFilter]);
+  useEffect(() => { loadAll(); }, [search, catFilter, statusFilter, selectedBranch]);
+
+  useEffect(() => {
+    window.electron.invoke('branches:getAll').then(setBranches).catch(() => setBranches([]));
+  }, []);
 
   function loadAll() {
-    window.electron.invoke('products:getAll', { search, category: catFilter === 'All Categories' ? null : catFilter, status: statusFilter === 'All Status' ? null : statusFilter })
+    window.electron.invoke('products:getAll', { search, category: catFilter === 'All Categories' ? null : catFilter, status: statusFilter === 'All Status' ? null : statusFilter, branch_id: selectedBranch || undefined })
       .then(data => setProducts(Array.isArray(data) ? data : []));
     window.electron.invoke('products:getInventoryStats', {})
       .then(data => setStats(data || {}));
     window.electron.invoke('categories:getAll', {})
       .then(data => setCategories(Array.isArray(data) ? data : []));
+  }
+
+  async function handleImportCSV() {
+    try {
+      const filePath = await window.electron.invoke('products:chooseImportFile');
+      if (!filePath) return;
+
+      let rows = [];
+      if (filePath.endsWith('.csv')) {
+        const fs = window.require ? window.require('fs') : null;
+        if (fs) {
+          const content = fs.readFileSync(filePath, 'utf8');
+          const lines = content.split('\n').filter(l => l.trim());
+          const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+          rows = lines.slice(1).map(line => {
+            const vals = line.split(',').map(v => v.trim().replace(/"/g, ''));
+            const obj = {};
+            headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
+            return obj;
+          });
+        }
+      } else {
+        const XLSX = window.require ? window.require('xlsx') : null;
+        if (XLSX) {
+          const wb = XLSX.readFile(filePath);
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json(ws);
+        }
+      }
+
+      if (rows.length === 0) { toast.error('No data found in file'); return; }
+      const result = await window.electron.invoke('products:importCSV', { rows });
+      if (result.success) {
+        toast.success(`Import complete: ${result.inserted} added, ${result.updated} updated`);
+        loadAll();
+      } else {
+        toast.error('Import failed');
+      }
+    } catch(e) {
+      toast.error('Import error: ' + e.message);
+    }
+  }
+
+  async function handleExportExcel() {
+    try {
+      const rows = await window.electron.invoke('products:exportCSV');
+      if (!rows || rows.length === 0) { toast.error('No products to export'); return; }
+      const savePath = await window.electron.invoke('products:chooseSaveFile');
+      if (!savePath) return;
+      const XLSX = window.require ? window.require('xlsx') : null;
+      if (!XLSX) { toast.error('Excel export not available'); return; }
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Products');
+      XLSX.writeFile(wb, savePath);
+      toast.success('Products exported successfully!');
+    } catch(e) {
+      toast.error('Export error: ' + e.message);
+    }
   }
 
   async function handleDelete(id) {
@@ -251,8 +324,16 @@ export default function InventoryServices() {
         <select className="form-select" style={{ width: 130 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option>All Status</option><option>Good</option><option>Low</option><option>Critical</option>
         </select>
+        <select value={selectedBranch} onChange={e => { setSelectedBranch(e.target.value); }} style={{ border:'1px solid #e5e7eb', borderRadius:8, padding:'8px 12px', fontSize:13 }}>
+          <option value=''>All Branches</option>
+          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
         {can('inventory', 'create') && (
-          <button className="btn btn-black filters-bar-right" onClick={openAdd}>+ Add Item</button>
+          <>
+            <button className="btn btn-outline filters-bar-right" onClick={handleImportCSV} style={{ marginRight: 8 }}>⬆ Import CSV</button>
+            <button className="btn btn-outline filters-bar-right" onClick={handleExportExcel} style={{ marginRight: 8 }}>⬇ Export</button>
+            <button className="btn btn-black filters-bar-right" onClick={openAdd}>+ Add Item</button>
+          </>
         )}
       </div>
 
@@ -296,6 +377,7 @@ export default function InventoryServices() {
         <ItemModal
           product={editProduct}
           categories={categories}
+          branches={branches}
           onClose={() => setShowModal(false)}
           onSaved={loadAll}
         />

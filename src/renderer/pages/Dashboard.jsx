@@ -6,11 +6,21 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState('');
   const navigate = useNavigate();
 
+  // Load branches on mount
   useEffect(() => {
-    window.electron.invoke('dashboard:getStats').then(setStats);
+    window.electron.invoke('branches:getAll').then(data => {
+      setBranches(data || []);
+    }).catch(err => console.error('Error loading branches:', err));
   }, []);
+
+  // Load stats whenever selectedBranch changes
+  useEffect(() => {
+    window.electron.invoke('dashboard:getStats', { branch_id: selectedBranch || undefined }).then(setStats);
+  }, [selectedBranch]);
 
   if (!stats) return <div style={{ padding: 40, color: '#6b7280' }}>Loading...</div>;
 
@@ -21,9 +31,18 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="page-header">
-        <div className="page-title">Dashboard</div>
-        <div className="page-subtitle">Welcome Back, {JSON.parse(localStorage.getItem('currentUser') || '{}').name}</div>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div className="page-title">Dashboard</div>
+          <div className="page-subtitle">Welcome Back, {JSON.parse(localStorage.getItem('currentUser') || '{}').name}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: '#6b7280' }}>Branch:</span>
+          <select value={selectedBranch} onChange={e => setSelectedBranch(e.target.value)} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: '6px 12px', fontSize: 13 }}>
+            <option value=''>All Branches</option>
+            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20 }}>
@@ -159,6 +178,23 @@ export default function Dashboard() {
                   <div style={{ fontWeight: 600, fontSize: 12 }}>${item.revenue?.toLocaleString()}</div>
                   <div style={{ color: '#9ca3af', fontSize: 11 }}>{item.units_sold} Units Sold</div>
                 </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Branch Revenue */}
+          <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: '1px solid #f1f5f9', marginTop: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Branch Revenue</div>
+            {(stats.branchRevenue || []).length === 0 && (
+              <div style={{ color: '#9ca3af', fontSize: 13 }}>No branch data</div>
+            )}
+            {(stats.branchRevenue || []).map((b, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 24, height: 24, borderRadius: '50%', background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>{i + 1}</span>
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{b.name}</span>
+                </div>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>₹{(b.revenue || 0).toLocaleString('en-IN')}</span>
               </div>
             ))}
           </div>
