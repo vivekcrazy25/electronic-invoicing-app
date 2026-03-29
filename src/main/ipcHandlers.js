@@ -16,6 +16,43 @@ module.exports = function registerHandlers({ getDb }) {
     return { success: true, user: safeUser };
   });
 
+  // Get all roles that have at least one active user (for login dropdown)
+  ipcMain.handle('auth:getRoles', async () => {
+    const db = getDb();
+    return db.prepare(`SELECT DISTINCT role FROM users WHERE is_active = 1 ORDER BY role`).all().map(r => r.role);
+  });
+
+  // Get active users for a given role (for login dropdown)
+  ipcMain.handle('auth:getUsersByRole', async (_, { role }) => {
+    const db = getDb();
+    return db.prepare(`SELECT id, name, mobile FROM users WHERE role = ? AND is_active = 1 ORDER BY name`).all(role);
+  });
+
+  // ─── USER ROLES MANAGEMENT ────────────────────────────────────────────────
+  ipcMain.handle('roles:getAll', async () => {
+    return getDb().prepare(`SELECT * FROM user_roles ORDER BY is_system DESC, name ASC`).all();
+  });
+
+  ipcMain.handle('roles:create', async (_, { name }) => {
+    try {
+      getDb().prepare(`INSERT INTO user_roles (name, is_system) VALUES (?, 0)`).run(name.trim());
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: 'Role already exists' };
+    }
+  });
+
+  ipcMain.handle('roles:delete', async (_, { id }) => {
+    const db = getDb();
+    const role = db.prepare(`SELECT * FROM user_roles WHERE id = ?`).get(id);
+    if (!role) return { success: false, error: 'Role not found' };
+    if (role.is_system) return { success: false, error: 'Cannot delete a system role' };
+    const inUse = db.prepare(`SELECT COUNT(*) as c FROM users WHERE role = ?`).get(role.name).c;
+    if (inUse > 0) return { success: false, error: `Role is assigned to ${inUse} user(s)` };
+    db.prepare(`DELETE FROM user_roles WHERE id = ?`).run(id);
+    return { success: true };
+  });
+
   // ─── PERMISSIONS ─────────────────────────────────────────────────────────
   ipcMain.handle('permissions:getForUser', async (_, { userId, role }) => {
     const db = getDb();
@@ -803,6 +840,34 @@ module.exports = function registerHandlers({ getDb }) {
     const db = getDb();
     const r = db.prepare(`INSERT INTO notifications (type,title,message,link) VALUES (?,?,?,?)`).run(type, title, message, link || null);
     return { success: true, id: r.lastInsertRowid };
+  });
+
+  // ─── INVOICE DESIGNER ────────────────────────────────────────────────────
+  ipcMain.handle('invoiceSettings:get', async () => {
+    const db = getDb();
+    let row = db.prepare(`SELECT * FROM invoice_settings WHERE id = 1`).get();
+    if (!row) {
+      db.prepare(`INSERT INTO invoice_settings (id) VALUES (1)`).run();
+      row = db.prepare(`SELECT * FROM invoice_settings WHERE id = 1`).get();
+    }
+    return { ...row, custom_fields: JSON.parse(row.custom_fields || '[]') };
+  });
+
+  ipcMain.handle('invoiceSettings:save', async (_, data) => {
+    const db = getDb();
+    const payload = { ...data, custom_fields: JSON.stringify(data.custom_fields || []) };
+    const exists = db.prepare(`SELECT id FROM invoice_settings WHERE id = 1`).get();
+    if (exists) {
+      const cols = Object.keys(payload).filter(k => k !== 'id').map(k => `${k} = ?`).join(', ');
+      const vals = Object.keys(payload).filter(k => k !== 'id').map(k => payload[k]);
+      db.prepare(`UPDATE invoice_settings SET ${cols} WHERE id = 1`).run(...vals);
+    } else {
+      db.prepare(`INSERT INTO invoice_settings (id) VALUES (1)`).run();
+      const cols = Object.keys(payload).filter(k => k !== 'id').map(k => `${k} = ?`).join(', ');
+      const vals = Object.keys(payload).filter(k => k !== 'id').map(k => payload[k]);
+      db.prepare(`UPDATE invoice_settings SET ${cols} WHERE id = 1`).run(...vals);
+    }
+    return { success: true };
   });
 
   // ─── CLEAR DATA ───────────────────────────────────────────────────────────

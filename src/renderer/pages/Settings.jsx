@@ -22,7 +22,7 @@ const MODULE_META = {
   settings:   { label: 'Settings',              icon: '⚙️', desc: 'Company & user settings' },
 };
 const ACCOUNT_TYPES = ['Cash','Bank','Capital','Sales','Purchase','Expense'];
-const TABS = ['Company Profile','Account Management','User Management','Branch Management','Backup & Security'];
+const TABS = ['Company Profile','Account Management','User Management','Branch Management','Backup & Security','Invoice Designer'];
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('Company Profile');
@@ -35,6 +35,7 @@ export default function Settings() {
       case 'User Management': return '👥';
       case 'Branch Management': return '🏪';
       case 'Backup & Security': return '🔒';
+      case 'Invoice Designer': return '🎨';
       default: return '⚙️';
     }
   };
@@ -63,6 +64,7 @@ export default function Settings() {
           {activeTab === 'User Management' && <UserManagement />}
           {activeTab === 'Branch Management' && <BranchManagement />}
           {activeTab === 'Backup & Security' && <BackupSecurity />}
+          {activeTab === 'Invoice Designer' && <InvoiceDesigner />}
         </div>
       </div>
     </div>
@@ -223,6 +225,7 @@ function AccountManagement() {
 function UserManagement() {
   const [users, setUsers] = useState([]);
   const [branches, setBranches] = useState([]);
+  const [allRoles, setAllRoles] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [showPerms, setShowPerms] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -230,10 +233,13 @@ function UserManagement() {
   const [permsMap, setPermsMap] = useState({});
   const { currentUser } = useAuth();
 
-  useEffect(() => {
+  function loadAll() {
     window.electron.invoke('users:getAll').then(setUsers).catch(() => {});
     window.electron.invoke('branches:getAll').then(setBranches).catch(() => {});
-  }, []);
+    window.electron.invoke('roles:getAll').then(r => setAllRoles(r.map(x => x.name))).catch(() => {});
+  }
+
+  useEffect(() => { loadAll(); }, []);
 
   async function saveUser() {
     if (!form.name || !form.password || !form.role) { toast.error('Name, password and role are required'); return; }
@@ -335,7 +341,7 @@ function UserManagement() {
             <div className="form-group"><label className="form-label">Mobile Number</label><input className="form-input" placeholder="(555) 000-0000" value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})} /></div>
             <div className="form-group"><label className="form-label">Email</label><input className="form-input" placeholder="user@email.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} /></div>
             {!editing && <div className="form-group"><label className="form-label">Password *</label><input type="password" className="form-input" placeholder="Min 8 characters" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} /></div>}
-            <div className="form-group"><label className="form-label">User Role *</label><select className="form-select" value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option value="">Select user role</option>{ROLES.map(r=><option key={r}>{r}</option>)}</select></div>
+            <div className="form-group"><label className="form-label">User Role *</label><select className="form-select" value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option value="">Select user role</option>{allRoles.map(r=><option key={r}>{r}</option>)}</select></div>
             <div className="form-group"><label className="form-label">Branch</label><select className="form-select" value={form.branch_id} onChange={e=>setForm({...form,branch_id:e.target.value})}><option value="">No Branch</option>{branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
@@ -347,6 +353,114 @@ function UserManagement() {
 
       {/* Permissions Modal */}
       {showPerms && <PermissionsModal user={showPerms} permsMap={permsMap} onToggle={togglePerm} onSave={savePerms} onReset={async () => { await window.electron.invoke('permissions:saveForUser',{userId:showPerms.id,permissions:{}}); setShowPerms(null); toast.success('Reset to role defaults'); }} onClose={() => setShowPerms(null)} />}
+
+      {/* User Types Manager */}
+      <UserTypesManager onRolesChanged={loadAll} />
+    </div>
+  );
+}
+
+// ── USER TYPES MANAGER ───────────────────────────────────────────────────────
+function UserTypesManager({ onRolesChanged }) {
+  const [roles, setRoles] = useState([]);
+  const [newRole, setNewRole] = useState('');
+  const [adding, setAdding] = useState(false);
+  const { currentUser } = useAuth();
+
+  function load() {
+    window.electron.invoke('roles:getAll').then(setRoles).catch(() => {});
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function addRole() {
+    if (!newRole.trim()) return;
+    const r = await window.electron.invoke('roles:create', { name: newRole.trim() });
+    if (r.success) {
+      toast.success(`User type "${newRole.trim()}" added`);
+      setNewRole('');
+      setAdding(false);
+      load();
+      onRolesChanged();
+    } else {
+      toast.error(r.error || 'Failed to add user type');
+    }
+  }
+
+  async function deleteRole(role) {
+    if (!window.confirm(`Delete user type "${role.name}"?`)) return;
+    const r = await window.electron.invoke('roles:delete', { id: role.id });
+    if (r.success) {
+      toast.success('User type deleted');
+      load();
+      onRolesChanged();
+    } else {
+      toast.error(r.error || 'Cannot delete');
+    }
+  }
+
+  if (currentUser?.role !== 'Owner') return null;
+
+  return (
+    <div className="card" style={{ marginTop: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>User Types</div>
+          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Manage roles available when creating users</div>
+        </div>
+        {!adding && (
+          <button className="btn btn-black btn-sm" onClick={() => setAdding(true)}>+ Add User Type</button>
+        )}
+      </div>
+
+      {adding && (
+        <div style={{ display: 'flex', gap: 8, margin: '14px 0', alignItems: 'center' }}>
+          <input
+            className="form-input"
+            style={{ flex: 1, maxWidth: 280 }}
+            placeholder="e.g. Sales Manager"
+            value={newRole}
+            onChange={e => setNewRole(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addRole(); if (e.key === 'Escape') { setAdding(false); setNewRole(''); } }}
+            autoFocus
+          />
+          <button className="btn btn-black btn-sm" onClick={addRole}>Save</button>
+          <button className="btn btn-outline btn-sm" onClick={() => { setAdding(false); setNewRole(''); }}>Cancel</button>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 14 }}>
+        {roles.map(role => (
+          <div
+            key={role.id}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '7px 14px', borderRadius: 20,
+              background: role.is_system ? '#f1f5f9' : '#eff6ff',
+              border: role.is_system ? '1px solid #e2e8f0' : '1px solid #bfdbfe',
+              fontSize: 13, fontWeight: 500,
+            }}
+          >
+            <span style={{ fontSize: 14 }}>
+              {role.name === 'Owner' ? '👑' : role.name === 'Accountant' ? '📒' : role.name === 'Billing Operator' ? '🧾' : role.name === 'Inventory Manager' ? '📦' : '👤'}
+            </span>
+            <span>{role.name}</span>
+            {role.is_system ? (
+              <span style={{ fontSize: 10, color: '#94a3b8', background: '#e2e8f0', borderRadius: 4, padding: '1px 5px' }}>SYSTEM</span>
+            ) : (
+              <button
+                onClick={() => deleteRole(role)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 14, lineHeight: 1, padding: 0, marginLeft: 2 }}
+                title="Delete"
+                onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+                onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -921,6 +1035,384 @@ function BranchManagement() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── INVOICE DESIGNER ─────────────────────────────────────────────────────────
+const TEMPLATE_COLORS = [
+  { label: 'Midnight Black', value: '#111111' },
+  { label: 'Royal Blue',     value: '#1d4ed8' },
+  { label: 'Forest Green',   value: '#15803d' },
+  { label: 'Crimson Red',    value: '#b91c1c' },
+  { label: 'Deep Purple',    value: '#7c3aed' },
+  { label: 'Ocean Teal',     value: '#0f766e' },
+  { label: 'Burnt Orange',   value: '#c2410c' },
+  { label: 'Slate Gray',     value: '#475569' },
+];
+
+const TEMPLATE_STYLES = [
+  { value: 'classic',  label: 'Classic',  desc: 'Clean header with logo left, details right' },
+  { value: 'modern',   label: 'Modern',   desc: 'Bold color band with white text header' },
+  { value: 'minimal',  label: 'Minimal',  desc: 'Borderless, typography-focused layout' },
+];
+
+const DEFAULT_SETTINGS = {
+  inv_prefix: 'INV', inv_suffix: '', inv_start_number: 1001, inv_padding: 4,
+  seller_name: '', seller_tagline: '', seller_address: '', seller_phone: '',
+  seller_email: '', seller_website: '', seller_gstin: '', seller_pan: '', seller_logo_path: '',
+  template_color: '#111111', template_style: 'classic',
+  show_customer_phone: true, show_customer_email: false, show_customer_gstin: true,
+  show_due_date: true, show_po_number: true, show_hsn: true,
+  show_discount: true, show_tax_breakdown: true, show_bank_details: true,
+  bank_name: '', bank_account_no: '', bank_ifsc: '', bank_branch: '',
+  footer_notes: 'Thank you for your business!',
+  terms_conditions: 'Payment due within 30 days.',
+  custom_fields: [],
+};
+
+function InvoiceDesigner() {
+  const [s, setS] = useState(DEFAULT_SETTINGS);
+  const [section, setSection] = useState('numbering');
+  const [newField, setNewField] = useState({ label: '', value: '' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    window.electron.invoke('invoiceSettings:get', {})
+      .then(data => {
+        if (data) {
+          const parsed = {};
+          Object.keys(DEFAULT_SETTINGS).forEach(k => {
+            parsed[k] = data[k] !== undefined ? data[k] : DEFAULT_SETTINGS[k];
+          });
+          parsed.custom_fields = Array.isArray(data.custom_fields) ? data.custom_fields : [];
+          setS(parsed);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  function set(key, val) { setS(prev => ({ ...prev, [key]: val })); }
+
+  function previewNumber() {
+    const num = String(s.inv_start_number || 1001).padStart(Number(s.inv_padding) || 4, '0');
+    return `${s.inv_prefix || ''}${num}${s.inv_suffix || ''}`;
+  }
+
+  function addCustomField() {
+    if (!newField.label.trim()) return;
+    setS(prev => ({ ...prev, custom_fields: [...(prev.custom_fields || []), { label: newField.label.trim(), value: newField.value.trim() }] }));
+    setNewField({ label: '', value: '' });
+  }
+
+  function removeCustomField(idx) {
+    setS(prev => ({ ...prev, custom_fields: prev.custom_fields.filter((_, i) => i !== idx) }));
+  }
+
+  async function save() {
+    setSaving(true);
+    const r = await window.electron.invoke('invoiceSettings:save', s).catch(() => ({ success: false }));
+    setSaving(false);
+    if (r.success) toast.success('Invoice design saved!');
+    else toast.error('Failed to save');
+  }
+
+  const SECTIONS = [
+    { key: 'numbering',  icon: '🔢', label: 'Invoice Numbering' },
+    { key: 'seller',     icon: '🏢', label: 'Seller Details' },
+    { key: 'template',   icon: '🎨', label: 'Template & Colors' },
+    { key: 'fields',     icon: '👁', label: 'Show / Hide Fields' },
+    { key: 'bank',       icon: '🏦', label: 'Bank Details' },
+    { key: 'custom',     icon: '✏️', label: 'Custom Fields' },
+    { key: 'footer',     icon: '📝', label: 'Footer & Terms' },
+  ];
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 18 }}>Invoice Designer</div>
+            <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>Customize how your invoices look and what information they show</div>
+          </div>
+          <button className="btn btn-black" onClick={save} disabled={saving}>
+            {saving ? 'Saving...' : '💾 Save Design'}
+          </button>
+        </div>
+
+        {/* Live number preview banner */}
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
+          <span style={{ fontSize: 12, color: '#64748b' }}>Next Invoice Number Preview:</span>
+          <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 18, color: s.template_color || '#111', background: '#fff', border: `2px solid ${s.template_color || '#111'}`, borderRadius: 8, padding: '4px 14px' }}>
+            {previewNumber()}
+          </span>
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>· Template: <strong>{TEMPLATE_STYLES.find(t => t.value === s.template_style)?.label || 'Classic'}</strong></span>
+          <div style={{ marginLeft: 'auto', width: 20, height: 20, borderRadius: '50%', background: s.template_color || '#111' }} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '185px 1fr', gap: 20 }}>
+          {/* Left section nav */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {SECTIONS.map(sec => (
+              <div
+                key={sec.key}
+                onClick={() => setSection(sec.key)}
+                style={{ padding: '10px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: section === sec.key ? 600 : 400, background: section === sec.key ? '#f1f5f9' : 'transparent', color: section === sec.key ? '#111' : '#374151', display: 'flex', alignItems: 'center', gap: 8, transition: 'background 0.1s' }}
+              >
+                <span style={{ fontSize: 15 }}>{sec.icon}</span> {sec.label}
+              </div>
+            ))}
+          </div>
+
+          {/* Right content */}
+          <div style={{ minHeight: 380 }}>
+
+            {/* ── INVOICE NUMBERING ─────────────────────────────── */}
+            {section === 'numbering' && (
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Invoice Numbering</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 20 }}>Set the format for auto-generated invoice numbers.</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div>
+                    <label className="form-label">Prefix</label>
+                    <input className="form-input" value={s.inv_prefix} onChange={e => set('inv_prefix', e.target.value)} placeholder="e.g. INV" />
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Appears before the number (e.g. INV, BILL, SA)</div>
+                  </div>
+                  <div>
+                    <label className="form-label">Suffix</label>
+                    <input className="form-input" value={s.inv_suffix} onChange={e => set('inv_suffix', e.target.value)} placeholder="e.g. /2025 or leave blank" />
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Appears after the number (e.g. /2025, -ZA)</div>
+                  </div>
+                  <div>
+                    <label className="form-label">Starting Number</label>
+                    <input className="form-input" type="number" value={s.inv_start_number} onChange={e => set('inv_start_number', parseInt(e.target.value) || 1)} />
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>The first invoice will use this number</div>
+                  </div>
+                  <div>
+                    <label className="form-label">Number Padding (digits)</label>
+                    <select className="form-select" value={s.inv_padding} onChange={e => set('inv_padding', parseInt(e.target.value))}>
+                      {[3,4,5,6].map(n => <option key={n} value={n}>{n} digits (e.g. {String(s.inv_start_number||1001).padStart(n,'0')})</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ marginTop: 20, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: 14 }}>
+                  <div style={{ fontSize: 12, color: '#15803d', fontWeight: 600 }}>Preview</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'monospace', color: '#111', marginTop: 4 }}>{previewNumber()}</div>
+                </div>
+              </div>
+            )}
+
+            {/* ── SELLER DETAILS ────────────────────────────────── */}
+            {section === 'seller' && (
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Seller Details</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 20 }}>Override company info shown on invoices (leave blank to use Company Profile values).</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div style={{ gridColumn: '1/-1' }}>
+                    <label className="form-label">Business Name on Invoice</label>
+                    <input className="form-input" value={s.seller_name} onChange={e => set('seller_name', e.target.value)} placeholder="Leave blank to use Company Profile name" />
+                  </div>
+                  <div style={{ gridColumn: '1/-1' }}>
+                    <label className="form-label">Tagline / Slogan</label>
+                    <input className="form-input" value={s.seller_tagline} onChange={e => set('seller_tagline', e.target.value)} placeholder="e.g. Your trusted electrical partner" />
+                  </div>
+                  <div>
+                    <label className="form-label">Phone</label>
+                    <input className="form-input" value={s.seller_phone} onChange={e => set('seller_phone', e.target.value)} placeholder="+91-9876543210" />
+                  </div>
+                  <div>
+                    <label className="form-label">Email</label>
+                    <input className="form-input" value={s.seller_email} onChange={e => set('seller_email', e.target.value)} placeholder="billing@company.com" />
+                  </div>
+                  <div>
+                    <label className="form-label">Website</label>
+                    <input className="form-input" value={s.seller_website} onChange={e => set('seller_website', e.target.value)} placeholder="www.company.com" />
+                  </div>
+                  <div>
+                    <label className="form-label">GSTIN / VAT Number</label>
+                    <input className="form-input" value={s.seller_gstin} onChange={e => set('seller_gstin', e.target.value)} placeholder="22AAAAA0000A1Z5" />
+                  </div>
+                  <div>
+                    <label className="form-label">PAN Number</label>
+                    <input className="form-input" value={s.seller_pan} onChange={e => set('seller_pan', e.target.value)} placeholder="AAAAA0000A" />
+                  </div>
+                  <div style={{ gridColumn: '1/-1' }}>
+                    <label className="form-label">Address on Invoice</label>
+                    <textarea className="form-input" rows={3} value={s.seller_address} onChange={e => set('seller_address', e.target.value)} placeholder="Full business address as it should appear on invoice" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── TEMPLATE & COLORS ─────────────────────────────── */}
+            {section === 'template' && (
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Template & Color Theme</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 20 }}>Choose the visual style and accent color for your printed invoices.</div>
+
+                <div style={{ marginBottom: 24 }}>
+                  <label className="form-label">Layout Style</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                    {TEMPLATE_STYLES.map(t => (
+                      <div
+                        key={t.value}
+                        onClick={() => set('template_style', t.value)}
+                        style={{ padding: '14px', borderRadius: 12, cursor: 'pointer', border: s.template_style === t.value ? `2px solid ${s.template_color}` : '1.5px solid #e2e8f0', background: s.template_style === t.value ? '#f8fafc' : '#fff', textAlign: 'center', transition: 'all 0.15s' }}
+                      >
+                        <div style={{ fontSize: 24, marginBottom: 6 }}>{t.value === 'classic' ? '📄' : t.value === 'modern' ? '🖼️' : '📋'}</div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{t.label}</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>{t.desc}</div>
+                        {s.template_style === t.value && <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700, color: s.template_color }}>✓ Selected</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="form-label">Accent Color</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                    {TEMPLATE_COLORS.map(c => (
+                      <div
+                        key={c.value}
+                        onClick={() => set('template_color', c.value)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, cursor: 'pointer', border: s.template_color === c.value ? `2px solid ${c.value}` : '1.5px solid #e2e8f0', background: s.template_color === c.value ? '#f8fafc' : '#fff' }}
+                      >
+                        <div style={{ width: 22, height: 22, borderRadius: '50%', background: c.value, flexShrink: 0, boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }} />
+                        <span style={{ fontSize: 12, fontWeight: s.template_color === c.value ? 700 : 400 }}>{c.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14, padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10 }}>
+                    <label className="form-label" style={{ margin: 0, whiteSpace: 'nowrap' }}>Custom Color</label>
+                    <input type="color" value={s.template_color} onChange={e => set('template_color', e.target.value)} style={{ width: 36, height: 36, padding: 2, border: '1px solid #e2e8f0', borderRadius: 6, cursor: 'pointer' }} />
+                    <span style={{ fontFamily: 'monospace', fontSize: 13, color: '#64748b' }}>{s.template_color}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── SHOW / HIDE FIELDS ────────────────────────────── */}
+            {section === 'fields' && (
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Show / Hide Invoice Fields</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 20 }}>Toggle which fields appear on the printed invoice.</div>
+                {[
+                  { key: 'show_customer_phone', label: 'Customer Phone Number', desc: 'Show customer phone on invoice' },
+                  { key: 'show_customer_email', label: 'Customer Email Address', desc: 'Show customer email on invoice' },
+                  { key: 'show_customer_gstin', label: 'Customer GSTIN / VAT No.', desc: 'Show customer tax number' },
+                  { key: 'show_due_date',        label: 'Payment Due Date',       desc: 'Show the payment due date field' },
+                  { key: 'show_po_number',       label: 'PO / Reference Number',  desc: 'Show purchase order reference' },
+                  { key: 'show_hsn',             label: 'HSN / SAC Code',         desc: 'Show HSN code column in items table' },
+                  { key: 'show_discount',        label: 'Discount Column',         desc: 'Show discount in items table' },
+                  { key: 'show_tax_breakdown',   label: 'Tax Breakdown (CGST/SGST)', desc: 'Show detailed tax lines in summary' },
+                  { key: 'show_bank_details',    label: 'Bank Details',            desc: 'Show bank details section at bottom' },
+                ].map(f => (
+                  <div
+                    key={f.key}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 10, border: '1px solid #f1f5f9', marginBottom: 8, background: s[f.key] ? '#f8faff' : '#fff' }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 500, fontSize: 13 }}>{f.label}</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{f.desc}</div>
+                    </div>
+                    <div
+                      onClick={() => set(f.key, !s[f.key])}
+                      style={{ width: 44, height: 24, borderRadius: 12, background: s[f.key] ? '#111' : '#d1d5db', cursor: 'pointer', position: 'relative', flexShrink: 0, transition: 'background 0.2s' }}
+                    >
+                      <div style={{ width: 20, height: 20, background: '#fff', borderRadius: '50%', position: 'absolute', top: 2, left: s[f.key] ? 22 : 2, transition: 'left 0.2s' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── BANK DETAILS ──────────────────────────────────── */}
+            {section === 'bank' && (
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Bank Details on Invoice</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 20 }}>These details appear at the bottom of the invoice so customers can pay via bank transfer.</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div>
+                    <label className="form-label">Bank Name</label>
+                    <input className="form-input" value={s.bank_name} onChange={e => set('bank_name', e.target.value)} placeholder="e.g. HDFC Bank" />
+                  </div>
+                  <div>
+                    <label className="form-label">Account Number</label>
+                    <input className="form-input" value={s.bank_account_no} onChange={e => set('bank_account_no', e.target.value)} placeholder="e.g. 50100123456789" />
+                  </div>
+                  <div>
+                    <label className="form-label">IFSC / Swift Code</label>
+                    <input className="form-input" value={s.bank_ifsc} onChange={e => set('bank_ifsc', e.target.value)} placeholder="e.g. HDFC0001234" />
+                  </div>
+                  <div>
+                    <label className="form-label">Branch</label>
+                    <input className="form-input" value={s.bank_branch} onChange={e => set('bank_branch', e.target.value)} placeholder="e.g. Andheri West, Mumbai" />
+                  </div>
+                </div>
+                {!s.show_bank_details && (
+                  <div style={{ marginTop: 16, background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 8, padding: 12, fontSize: 12, color: '#92400e' }}>
+                    ⚠️ Bank details section is currently hidden on invoices. Enable it in <strong>Show / Hide Fields</strong>.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── CUSTOM FIELDS ─────────────────────────────────── */}
+            {section === 'custom' && (
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Custom Fields</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 20 }}>Add extra label-value pairs that appear in the invoice header (e.g. "VAT Reg No.", "Quotation Ref", "Delivery Address").</div>
+
+                {(s.custom_fields || []).length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '30px 0', color: '#94a3b8', fontSize: 13, border: '1.5px dashed #e2e8f0', borderRadius: 12, marginBottom: 20 }}>
+                    No custom fields yet. Add one below.
+                  </div>
+                )}
+
+                {(s.custom_fields || []).map((cf, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <input className="form-input" style={{ flex: '0 0 160px' }} value={cf.label} onChange={e => { const arr = [...s.custom_fields]; arr[idx] = { ...arr[idx], label: e.target.value }; set('custom_fields', arr); }} placeholder="Label" />
+                    <span style={{ color: '#94a3b8', fontSize: 13 }}>:</span>
+                    <input className="form-input" style={{ flex: 1 }} value={cf.value} onChange={e => { const arr = [...s.custom_fields]; arr[idx] = { ...arr[idx], value: e.target.value }; set('custom_fields', arr); }} placeholder="Value" />
+                    <button onClick={() => removeCustomField(idx)} style={{ background: '#fee2e2', border: 'none', color: '#ef4444', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>✕</button>
+                  </div>
+                ))}
+
+                <div style={{ display: 'flex', gap: 10, marginTop: 16, padding: '14px', background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+                  <input className="form-input" style={{ flex: '0 0 160px' }} value={newField.label} onChange={e => setNewField(p => ({ ...p, label: e.target.value }))} placeholder="Field Label" onKeyDown={e => e.key === 'Enter' && addCustomField()} />
+                  <input className="form-input" style={{ flex: 1 }} value={newField.value} onChange={e => setNewField(p => ({ ...p, value: e.target.value }))} placeholder="Field Value (or leave blank)" onKeyDown={e => e.key === 'Enter' && addCustomField()} />
+                  <button className="btn btn-black btn-sm" onClick={addCustomField}>+ Add</button>
+                </div>
+              </div>
+            )}
+
+            {/* ── FOOTER & TERMS ────────────────────────────────── */}
+            {section === 'footer' && (
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Footer & Terms</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 20 }}>Text that appears at the bottom of every invoice.</div>
+                <div className="form-group">
+                  <label className="form-label">Thank You / Footer Note</label>
+                  <textarea className="form-input" rows={3} value={s.footer_notes} onChange={e => set('footer_notes', e.target.value)} placeholder="e.g. Thank you for your business!" />
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Shown prominently at the bottom of the invoice</div>
+                </div>
+                <div className="form-group" style={{ marginTop: 14 }}>
+                  <label className="form-label">Terms & Conditions</label>
+                  <textarea className="form-input" rows={4} value={s.terms_conditions} onChange={e => set('terms_conditions', e.target.value)} placeholder="e.g. Payment due within 30 days. Goods once sold cannot be returned." />
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>Fine print at the bottom of the invoice</div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+
+        {/* Save button at bottom */}
+        <div style={{ borderTop: '1px solid #f1f5f9', marginTop: 24, paddingTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button className="btn btn-outline" onClick={() => { setS(DEFAULT_SETTINGS); toast('Reset to defaults', { icon: '↺' }); }}>Reset to Defaults</button>
+          <button className="btn btn-black" onClick={save} disabled={saving}>{saving ? 'Saving...' : '💾 Save Design'}</button>
+        </div>
+      </div>
     </div>
   );
 }

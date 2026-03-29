@@ -59,6 +59,14 @@ function createTables() {
       UNIQUE(role, permission_id)
     );
 
+    -- User Roles (system + custom)
+    CREATE TABLE IF NOT EXISTS user_roles (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL UNIQUE,
+      is_system  INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     -- Users
     CREATE TABLE IF NOT EXISTS users (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -321,6 +329,49 @@ function createTables() {
       status    TEXT
     );
 
+    -- Invoice Designer Settings
+    CREATE TABLE IF NOT EXISTS invoice_settings (
+      id                  INTEGER PRIMARY KEY DEFAULT 1,
+      -- Invoice Number
+      inv_prefix          TEXT DEFAULT 'INV',
+      inv_suffix          TEXT DEFAULT '',
+      inv_start_number    INTEGER DEFAULT 1001,
+      inv_padding         INTEGER DEFAULT 4,
+      -- Seller / Company overrides
+      seller_name         TEXT DEFAULT '',
+      seller_tagline      TEXT DEFAULT '',
+      seller_address      TEXT DEFAULT '',
+      seller_phone        TEXT DEFAULT '',
+      seller_email        TEXT DEFAULT '',
+      seller_website      TEXT DEFAULT '',
+      seller_gstin        TEXT DEFAULT '',
+      seller_pan          TEXT DEFAULT '',
+      seller_logo_path    TEXT DEFAULT '',
+      -- Template
+      template_color      TEXT DEFAULT '#111111',
+      template_style      TEXT DEFAULT 'classic',
+      -- Show/Hide Fields
+      show_customer_phone INTEGER DEFAULT 1,
+      show_customer_email INTEGER DEFAULT 0,
+      show_customer_gstin INTEGER DEFAULT 1,
+      show_due_date       INTEGER DEFAULT 1,
+      show_po_number      INTEGER DEFAULT 1,
+      show_hsn            INTEGER DEFAULT 1,
+      show_discount       INTEGER DEFAULT 1,
+      show_tax_breakdown  INTEGER DEFAULT 1,
+      show_bank_details   INTEGER DEFAULT 1,
+      -- Bank details on invoice
+      bank_name           TEXT DEFAULT '',
+      bank_account_no     TEXT DEFAULT '',
+      bank_ifsc           TEXT DEFAULT '',
+      bank_branch         TEXT DEFAULT '',
+      -- Footer
+      footer_notes        TEXT DEFAULT 'Thank you for your business!',
+      terms_conditions    TEXT DEFAULT 'Payment due within 30 days.',
+      -- Custom fields (JSON array of {label, value})
+      custom_fields       TEXT DEFAULT '[]'
+    );
+
     -- Notifications
     CREATE TABLE IF NOT EXISTS notifications (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -369,6 +420,16 @@ function seedDefaultData() {
   if (!cp) {
     db.prepare(`INSERT INTO company_profile (id, company_name, mobile, email, address)
       VALUES (1, 'Acme Electricals', '+91-9876543210', 'info@acme.com', '123 Market Street, Mumbai, India')`).run();
+  }
+
+  // ── User Roles ─────────────────────────────────────────────────────────────
+  const ur = db.prepare('SELECT id FROM user_roles').get();
+  if (!ur) {
+    const insertRole = db.prepare(`INSERT INTO user_roles (name, is_system) VALUES (?, 1)`);
+    insertRole.run('Owner');
+    insertRole.run('Accountant');
+    insertRole.run('Billing Operator');
+    insertRole.run('Inventory Manager');
   }
 
   // ── Branches ───────────────────────────────────────────────────────────────
