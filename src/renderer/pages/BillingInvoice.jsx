@@ -1,10 +1,10 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import { useBarcodeGun } from '../hooks/useBarcodeGun';
 import BarcodeScanner from '../components/BarcodeScanner';
 
-// â”€â”€ Print Invoice â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Print Invoice ----------------------------------------------------------
 function printInvoice(invoice) {
   if (!invoice) return;
   const items = invoice.items || [];
@@ -14,8 +14,8 @@ function printInvoice(invoice) {
       <td>${it.product_name || it.name || ''}</td>
       <td>${it.product_code || it.sku || ''}</td>
       <td style="text-align:center">${it.qty}</td>
-      <td style="text-align:right">&#8377;${Number(it.rate).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
-      <td style="text-align:right">&#8377;${Number(it.amount).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+      <td style="text-align:right">Rs.${Number(it.rate).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
+      <td style="text-align:right">Rs.${Number(it.amount).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
     </tr>`).join('');
 
   const html = `<!DOCTYPE html><html><head><title>Invoice ${invoice.invoice_no}</title>
@@ -66,13 +66,13 @@ function printInvoice(invoice) {
     <div class="bill-box">
       <label>Bill To</label>
       <div style="font-weight:600;font-size:14px">${invoice.customer_name || 'Walk-in Customer'}</div>
-      ${invoice.customer_phone ? `<div style="color:#555;margin-top:3px">&#128222; ${invoice.customer_phone}</div>` : ''}
+      ${invoice.customer_phone ? `<div style="color:#555;margin-top:3px">Ph: ${invoice.customer_phone}</div>` : ''}
       ${invoice.customer_address ? `<div style="color:#555;margin-top:3px">${invoice.customer_address}</div>` : ''}
     </div>
     <div class="bill-box">
       <label>Payment Details</label>
-      <div class="payment-badge">&#128179; ${invoice.payment_mode || 'Cash'}</div>
-      ${invoice.is_credit_sale ? '<div style="color:#b45309;margin-top:6px;font-size:12px">&#9888; Credit Sale â€” Payment Pending</div>' : ''}
+      <div class="payment-badge">${invoice.payment_mode || 'Cash'}</div>
+      ${invoice.is_credit_sale ? '<div style="color:#b45309;margin-top:6px;font-size:12px">Credit Sale - Payment Pending</div>' : ''}
     </div>
   </div>
 
@@ -82,23 +82,21 @@ function printInvoice(invoice) {
   </table>
 
   <div class="totals">
-    <div class="totals-row"><span style="color:#555">Subtotal</span><span>&#8377;${Number(invoice.subtotal||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>
-    ${invoice.tax_amount > 0 ? `<div class="totals-row"><span style="color:#555">Tax</span><span>&#8377;${Number(invoice.tax_amount).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>` : ''}
-    <div class="totals-row grand"><span>Grand Total</span><span>&#8377;${Number(invoice.grand_total||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>
+    ${invoice.subtotal > 0 ? `<div class="totals-row"><span>Subtotal</span><span>Rs.${Number(invoice.subtotal).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>` : ''}
+    ${invoice.tax_amount > 0 ? `<div class="totals-row"><span>Tax</span><span>Rs.${Number(invoice.tax_amount).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>` : ''}
+    <div class="totals-row grand"><span>Grand Total</span><span>Rs.${Number(invoice.grand_total).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>
   </div>
 
-  ${invoice.internal_notes ? `<div class="footer"><b>Notes:</b> ${invoice.internal_notes}</div>` : ''}
-  <div class="footer" style="margin-top:16px;text-align:center;font-size:11px;color:#94a3b8">Thank you for your business!</div>
-
-  <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }</script>
+  ${invoice.internal_notes ? `<div class="footer"><strong>Notes:</strong> ${invoice.internal_notes}</div>` : ''}
   </body></html>`;
 
-  const win = window.open('', '_blank', 'width=800,height=900');
+  const win = window.open('', '_blank', 'width=800,height=700');
   win.document.write(html);
   win.document.close();
+  win.onload = () => { win.print(); win.close(); };
 }
 
-// â”€â”€ KebabMenu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- KebabMenu --------------------------------------------------------------
 function KebabMenu({ items }) {
   const [open, setOpen] = useState(false);
   const ref = useRef();
@@ -109,7 +107,17 @@ function KebabMenu({ items }) {
   }, []);
   return (
     <div ref={ref} style={{ position:'relative', display:'inline-block' }}>
-      <button className="btn-icon" onClick={() => setOpen(v => !v)}>â‹®</button>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{ background:'none', border:'1px solid #e2e8f0', cursor:'pointer', padding:'4px 10px', borderRadius:6, color:'#374151', fontSize:16, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center', gap:2 }}
+        title="Actions"
+      >
+        <svg width="14" height="14" viewBox="0 0 4 16" fill="currentColor">
+          <circle cx="2" cy="2" r="1.5"/>
+          <circle cx="2" cy="8" r="1.5"/>
+          <circle cx="2" cy="14" r="1.5"/>
+        </svg>
+      </button>
       {open && (
         <div style={{ position:'absolute', right:0, top:'100%', background:'#fff', border:'1px solid #e2e8f0', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', zIndex:200, minWidth:180 }}>
           {items.map((item, i) => (
@@ -117,7 +125,7 @@ function KebabMenu({ items }) {
               style={{ padding:'10px 16px', cursor:'pointer', fontSize:13, color:item.danger?'#ef4444':'#1e293b', borderBottom:i<items.length-1?'1px solid #f1f5f9':'none', display:'flex', alignItems:'center', gap:8 }}
               onMouseEnter={e => e.currentTarget.style.background='#f8fafc'}
               onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-              {item.icon && <span style={{fontSize:14}}>{item.icon}</span>}{item.label}
+              {item.icon && <span style={{fontSize:13, fontWeight:600, color:'#64748b', minWidth:20}}>{item.icon}</span>}{item.label}
             </div>
           ))}
         </div>
@@ -126,7 +134,7 @@ function KebabMenu({ items }) {
   );
 }
 
-// â”€â”€ ViewInvoiceModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- ViewInvoiceModal -------------------------------------------------------
 function ViewInvoiceModal({ invoiceId, onClose, onReturn }) {
   const [inv, setInv] = useState(null);
   useEffect(() => {
@@ -146,14 +154,14 @@ function ViewInvoiceModal({ invoiceId, onClose, onReturn }) {
         <div style={{ padding:'20px 24px', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <div>
             <div style={{ fontWeight:700, fontSize:18 }}>{inv.invoice_no}</div>
-            <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>{inv.invoice_date} Â· <span style={{ color:statusColor, fontWeight:600 }}>{inv.status}</span></div>
+            <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>{inv.invoice_date} &middot; <span style={{ color:statusColor, fontWeight:600 }}>{inv.status}</span></div>
           </div>
           <div style={{ display:'flex', gap:8 }}>
-            <button className="btn btn-outline btn-sm" onClick={() => printInvoice(inv)}>ðŸ–¨ï¸ Print</button>
+            <button className="btn btn-outline btn-sm" onClick={() => printInvoice(inv)}>Print</button>
             {(inv.status === 'Paid' || inv.status === 'Credit') && (
-              <button className="btn btn-outline btn-sm" style={{ color:'#f97316', borderColor:'#f97316' }} onClick={() => { onClose(); onReturn(inv); }}>â†© Return / Exchange</button>
+              <button className="btn btn-outline btn-sm" style={{ color:'#f97316', borderColor:'#f97316' }} onClick={() => { onClose(); onReturn(inv); }}>Return / Exchange</button>
             )}
-            <button className="btn btn-outline btn-sm" onClick={onClose}>âœ• Close</button>
+            <button className="btn btn-outline btn-sm" onClick={onClose}>Close</button>
           </div>
         </div>
 
@@ -162,13 +170,15 @@ function ViewInvoiceModal({ invoiceId, onClose, onReturn }) {
           <div style={{ background:'#f8fafc', borderRadius:10, padding:'12px 16px' }}>
             <div style={{ fontSize:11, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', marginBottom:8 }}>Bill To</div>
             <div style={{ fontWeight:700, fontSize:15 }}>{inv.customer_name || 'Walk-in Customer'}</div>
-            {inv.customer_phone && <div style={{ fontSize:12, color:'#64748b', marginTop:4 }}>ðŸ“ž {inv.customer_phone}</div>}
+            {inv.customer_phone && <div style={{ fontSize:12, color:'#64748b', marginTop:4 }}>Ph: {inv.customer_phone}</div>}
             {inv.customer_address && <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>{inv.customer_address}</div>}
           </div>
           <div style={{ background:'#f8fafc', borderRadius:10, padding:'12px 16px' }}>
             <div style={{ fontSize:11, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', marginBottom:8 }}>Payment</div>
             <div style={{ fontWeight:600 }}>{inv.payment_mode}</div>
-            {inv.is_credit_sale ? <div style={{ fontSize:12, color:'#f97316', marginTop:4 }}>âš ï¸ Credit Sale â€” Payment Pending</div> : <div style={{ fontSize:12, color:'#16a34a', marginTop:4 }}>âœ“ Paid</div>}
+            {inv.is_credit_sale
+              ? <div style={{ fontSize:12, color:'#f97316', marginTop:4 }}>Credit Sale &ndash; Payment Pending</div>
+              : <div style={{ fontSize:12, color:'#16a34a', marginTop:4 }}>Paid</div>}
             {inv.due_date && <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>Due: {inv.due_date}</div>}
           </div>
         </div>
@@ -184,8 +194,8 @@ function ViewInvoiceModal({ invoiceId, onClose, onReturn }) {
                   <td>{it.product_name||it.name}</td>
                   <td style={{color:'#64748b'}}>{it.product_code||it.sku||'-'}</td>
                   <td style={{textAlign:'center'}}>{it.qty}</td>
-                  <td style={{textAlign:'right'}}>â‚¹{Number(it.rate).toLocaleString()}</td>
-                  <td style={{textAlign:'right',fontWeight:600}}>â‚¹{Number(it.amount).toLocaleString()}</td>
+                  <td style={{textAlign:'right'}}>Rs.{Number(it.rate).toLocaleString()}</td>
+                  <td style={{textAlign:'right',fontWeight:600}}>Rs.{Number(it.amount).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
@@ -197,14 +207,14 @@ function ViewInvoiceModal({ invoiceId, onClose, onReturn }) {
           <div style={{ marginLeft:'auto', width:260 }}>
             {[
               { label:'Subtotal', val: inv.subtotal },
-              { label:`Tax`, val: inv.tax_amount },
+              { label:'Tax', val: inv.tax_amount },
             ].filter(r => r.val > 0).map(r => (
               <div key={r.label} style={{ display:'flex', justifyContent:'space-between', fontSize:13, padding:'4px 0', color:'#64748b' }}>
-                <span>{r.label}</span><span>â‚¹{Number(r.val).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                <span>{r.label}</span><span>Rs.{Number(r.val).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
               </div>
             ))}
             <div style={{ display:'flex', justifyContent:'space-between', fontWeight:700, fontSize:17, borderTop:'2px solid #111', paddingTop:8, marginTop:4 }}>
-              <span>Grand Total</span><span>â‚¹{Number(inv.grand_total).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+              <span>Grand Total</span><span>Rs.{Number(inv.grand_total).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
             </div>
           </div>
         </div>
@@ -219,7 +229,7 @@ function ViewInvoiceModal({ invoiceId, onClose, onReturn }) {
   );
 }
 
-// â”€â”€ UpdatePaymentModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- UpdatePaymentModal -----------------------------------------------------
 function UpdatePaymentModal({ invoice, onClose, onUpdated }) {
   const [mode, setMode] = useState('Cash');
   const [amount, setAmount] = useState(invoice.grand_total - (invoice.paid_amount||0));
@@ -229,7 +239,7 @@ function UpdatePaymentModal({ invoice, onClose, onUpdated }) {
     setSaving(true);
     const r = await window.electron.invoke('invoices:updateStatus', { id: invoice.id, status: 'Paid', paid_amount: invoice.grand_total });
     setSaving(false);
-    if (r.success) { toast.success('Payment recorded â€” Invoice marked Paid'); onUpdated(); onClose(); }
+    if (r.success) { toast.success('Payment recorded - Invoice marked Paid'); onUpdated(); onClose(); }
     else toast.error(r.error || 'Failed');
   }
 
@@ -239,9 +249,9 @@ function UpdatePaymentModal({ invoice, onClose, onUpdated }) {
     <div className="modal-overlay" onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background:'#fff', borderRadius:14, width:440, padding:28, boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}>
         <div style={{ fontWeight:700, fontSize:17, marginBottom:4 }}>Record Payment</div>
-        <div style={{ fontSize:12, color:'#64748b', marginBottom:20 }}>Invoice {invoice.invoice_no} Â· {invoice.customer_name}</div>
+        <div style={{ fontSize:12, color:'#64748b', marginBottom:20 }}>Invoice {invoice.invoice_no} &middot; {invoice.customer_name}</div>
         <div style={{ background:'#fef9c3', border:'1px solid #fde68a', borderRadius:8, padding:12, marginBottom:20, fontSize:13 }}>
-          Outstanding: <strong>â‚¹{outstanding.toLocaleString('en-IN', {minimumFractionDigits:2})}</strong>
+          Outstanding: <strong>Rs.{outstanding.toLocaleString('en-IN', {minimumFractionDigits:2})}</strong>
         </div>
         <div className="form-group">
           <label className="form-label">Payment Mode</label>
@@ -256,25 +266,23 @@ function UpdatePaymentModal({ invoice, onClose, onUpdated }) {
           </div>
         </div>
         <div className="form-group">
-          <label className="form-label">Amount Received (â‚¹)</label>
+          <label className="form-label">Amount Received (Rs.)</label>
           <input type="number" className="form-input" value={amount} onChange={e => setAmount(e.target.value)} />
         </div>
         <div className="modal-footer">
           <button className="btn btn-outline" onClick={onClose}>Cancel</button>
-          <button className="btn btn-black" onClick={confirm} disabled={saving}>{saving?'Saving...':'âœ“ Confirm Payment'}</button>
+          <button className="btn btn-black" onClick={confirm} disabled={saving}>{saving?'Saving...':'Confirm Payment'}</button>
         </div>
       </div>
     </div>
   );
 }
 
-// â”€â”€ ReturnExchangeModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- ReturnExchangeModal ----------------------------------------------------
 function ReturnExchangeModal({ invoice, onClose, onSaved }) {
   const [type, setType] = useState('Return');
   const [items, setItems] = useState([]);
-  const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
-  const [step, setStep] = useState(1);
 
   useEffect(() => {
     window.electron.invoke('invoices:getById', { id: invoice.id }).then(inv => {
@@ -291,7 +299,6 @@ function ReturnExchangeModal({ invoice, onClose, onSaved }) {
   const returnItems = items.filter(it => it.returned_qty > 0);
   const refundTotal = returnItems.reduce((s, it) => s + (it.returned_qty * it.rate), 0);
 
-  // Days since invoice
   const daysSince = Math.floor((Date.now() - new Date(invoice.invoice_date).getTime()) / 86400000);
   const overdue = daysSince > 15;
 
@@ -322,23 +329,22 @@ function ReturnExchangeModal({ invoice, onClose, onSaved }) {
       <div onClick={e => e.stopPropagation()} style={{ background:'#fff', borderRadius:16, width:600, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 24px 80px rgba(0,0,0,0.2)' }}>
         <div style={{ padding:'20px 24px', borderBottom:'1px solid #f1f5f9' }}>
           <div style={{ fontWeight:700, fontSize:17 }}>Return / Exchange</div>
-          <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>Invoice {invoice.invoice_no} Â· {invoice.customer_name || 'Walk-in'} Â· {daysSince} day(s) ago</div>
+          <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>Invoice {invoice.invoice_no} &middot; {invoice.customer_name || 'Walk-in'} &middot; {daysSince} day(s) ago</div>
         </div>
 
         <div style={{ padding:'20px 24px' }}>
           {overdue && (
             <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:12, marginBottom:16, fontSize:13, color:'#dc2626' }}>
-              âš ï¸ This invoice is {daysSince} days old. The standard 15-day return window has expired.
+              Warning: This invoice is {daysSince} days old. The standard 15-day return window has expired.
             </div>
           )}
 
-          {/* Type */}
           <div style={{ marginBottom:20 }}>
             <label className="form-label">Type</label>
             <div style={{ display:'flex', gap:10 }}>
               {['Return','Exchange'].map(t => (
                 <div key={t} onClick={() => setType(t)} style={{ flex:1, padding:'12px 16px', borderRadius:10, cursor:'pointer', border: type===t?'2px solid #111':'1.5px solid #e2e8f0', background: type===t?'#f8fafc':'#fff', textAlign:'center', fontWeight: type===t?700:400, fontSize:14 }}>
-                  {t==='Return'?'â†© Return':'ðŸ”„ Exchange'}
+                  {t === 'Return' ? 'Return' : 'Exchange'}
                   <div style={{ fontSize:11, color:'#64748b', fontWeight:400, marginTop:3 }}>
                     {t==='Return'?'Customer gets refund':'Customer swaps item'}
                   </div>
@@ -347,7 +353,6 @@ function ReturnExchangeModal({ invoice, onClose, onSaved }) {
             </div>
           </div>
 
-          {/* Items */}
           <div style={{ marginBottom:16 }}>
             <label className="form-label">Select Items to {type}</label>
             <table className="data-table" style={{ fontSize:13 }}>
@@ -363,9 +368,9 @@ function ReturnExchangeModal({ invoice, onClose, onSaved }) {
                         onChange={e => setQty(i, e.target.value)}
                         style={{ width:60, padding:'4px 8px', border:'1px solid #e2e8f0', borderRadius:6, textAlign:'center', fontSize:13 }} />
                     </td>
-                    <td style={{textAlign:'right'}}>â‚¹{Number(it.rate).toLocaleString()}</td>
+                    <td style={{textAlign:'right'}}>Rs.{Number(it.rate).toLocaleString()}</td>
                     <td style={{textAlign:'right', fontWeight:600, color: it.returned_qty>0?'#ef4444':'#94a3b8'}}>
-                      {it.returned_qty > 0 ? `-â‚¹${(it.returned_qty*it.rate).toLocaleString()}` : 'â€”'}
+                      {it.returned_qty > 0 ? `-Rs.${(it.returned_qty*it.rate).toLocaleString()}` : '-'}
                     </td>
                   </tr>
                 ))}
@@ -376,7 +381,7 @@ function ReturnExchangeModal({ invoice, onClose, onSaved }) {
           {refundTotal > 0 && (
             <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'12px 16px', display:'flex', justifyContent:'space-between', marginBottom:16 }}>
               <span style={{ fontWeight:600 }}>Total {type === 'Return' ? 'Refund' : 'Credit'}</span>
-              <span style={{ fontWeight:700, fontSize:17, color:'#ef4444' }}>â‚¹{refundTotal.toLocaleString('en-IN', {minimumFractionDigits:2})}</span>
+              <span style={{ fontWeight:700, fontSize:17, color:'#ef4444' }}>Rs.{refundTotal.toLocaleString('en-IN', {minimumFractionDigits:2})}</span>
             </div>
           )}
         </div>
@@ -392,7 +397,7 @@ function ReturnExchangeModal({ invoice, onClose, onSaved }) {
   );
 }
 
-// â”€â”€ InvoiceStartModal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- InvoiceStartModal ------------------------------------------------------
 function InvoiceStartModal({ onClose, onNew, onResume }) {
   const [drafts, setDrafts] = useState([]);
   useEffect(() => {
@@ -408,12 +413,12 @@ function InvoiceStartModal({ onClose, onNew, onResume }) {
           <div onClick={onNew} style={{ border:'2px solid #111', borderRadius:10, padding:20, cursor:'pointer', textAlign:'center' }}
                onMouseEnter={e => e.currentTarget.style.background='#f8fafc'}
                onMouseLeave={e => e.currentTarget.style.background='#fff'}>
-            <div style={{ fontSize:28, marginBottom:8 }}>ðŸ“„</div>
+            <div style={{ fontSize:28, marginBottom:8 }}>+</div>
             <div style={{ fontWeight:700, fontSize:15 }}>Create New</div>
             <div style={{ fontSize:12, color:'#6b7280' }}>Start a fresh invoice</div>
           </div>
           <div style={{ border:'2px solid #f97316', borderRadius:10, padding:20, textAlign:'center', opacity: drafts.length ? 1 : 0.4, cursor: drafts.length ? 'pointer' : 'default' }}>
-            <div style={{ fontSize:28, marginBottom:8 }}>âœï¸</div>
+            <div style={{ fontSize:28, marginBottom:8 }}>~</div>
             <div style={{ fontWeight:700, fontSize:15 }}>Continue Draft</div>
             <div style={{ fontSize:12, color:'#6b7280' }}>{drafts.length} draft(s) saved</div>
           </div>
@@ -427,9 +432,9 @@ function InvoiceStartModal({ onClose, onNew, onResume }) {
                    onMouseLeave={e => e.currentTarget.style.background='#fff'}>
                 <div>
                   <div style={{ fontWeight:600, fontSize:13 }}>{d.invoice_no || 'Unsaved Draft'}</div>
-                  <div style={{ fontSize:12, color:'#6b7280' }}>{d.customer_name || 'No customer'} Â· {d.invoice_date}</div>
+                  <div style={{ fontSize:12, color:'#6b7280' }}>{d.customer_name || 'No customer'} &middot; {d.invoice_date}</div>
                 </div>
-                <div style={{ fontWeight:700, color:'#111' }}>â‚¹{d.grand_total?.toLocaleString('en-IN')}</div>
+                <div style={{ fontWeight:700, color:'#111' }}>Rs.{d.grand_total?.toLocaleString('en-IN')}</div>
               </div>
             ))}
           </div>
@@ -442,7 +447,7 @@ function InvoiceStartModal({ onClose, onNew, onResume }) {
   );
 }
 
-// â”€â”€ CreateInvoiceForm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- CreateInvoiceForm ------------------------------------------------------
 function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
   const [products, setProducts] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -553,7 +558,7 @@ function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
         is_credit_sale: isCreditSale ? 1 : 0, tax_pct: taxPct, discount: parseFloat(discount) || 0,
         subtotal, tax_amount: taxAmt, grand_total: grandTotal, notes, status,
       };
-      const result = await window.electron.invoke(draftId ? 'invoices:update' : 'invoices:create', draftId ? { id: draftId, ...payload } : payload);
+      const result = await window.electron.invoke(draftId ? 'invoices:update' : 'invoices:create', draftId ? { id: draftId, data: payload } : payload);
       if (result.success) {
         toast.success(status === 'Draft' ? 'Saved as draft' : 'Invoice created!');
         onSaved(); onClose();
@@ -564,7 +569,7 @@ function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
   return (
     <div style={{ position:'fixed', inset:0, background:'#fff', zIndex:200, overflowY:'auto', display:'flex', flexDirection:'column' }}>
       <div style={{ padding:'16px 24px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'center', gap:16, background:'#fff', position:'sticky', top:0, zIndex:10 }}>
-        <button className="btn btn-outline" onClick={onClose}>â† Back</button>
+        <button className="btn btn-outline" onClick={onClose}>&larr; Back</button>
         <div>
           <div style={{ fontWeight:700, fontSize:18 }}>Create Invoice</div>
           <div style={{ fontSize:12, color:'#64748b' }}>Fill in the details to generate a sales invoice</div>
@@ -623,25 +628,25 @@ function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
                         onMouseEnter={e => e.currentTarget.style.background='#f8fafc'}
                         onMouseLeave={e => e.currentTarget.style.background='#fff'}>
                         <span>{p.name} <span style={{ color:'#94a3b8', fontSize:11 }}>{p.sku}</span></span>
-                        <span style={{ fontWeight:600 }}>â‚¹{p.selling_price?.toLocaleString()}</span>
+                        <span style={{ fontWeight:600 }}>Rs.{p.selling_price?.toLocaleString()}</span>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
               <button onClick={() => setShowScanner(true)} title="Scan barcode"
-                style={{ padding:'0 14px', background:'#1e293b', border:'none', borderRadius:8, cursor:'pointer', color:'#fff', fontSize:18, display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-                <span>ðŸ“·</span><span style={{ fontSize:12, fontWeight:600 }}>Scan</span>
+                style={{ padding:'0 14px', background:'#1e293b', border:'none', borderRadius:8, cursor:'pointer', color:'#fff', fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+                [Scan]
               </button>
             </div>
-            <div style={{ marginTop:5, fontSize:11, color:'#94a3b8' }}>ðŸ’¡ USB barcode gun works anytime â€” just scan and product is added instantly</div>
+            <div style={{ marginTop:5, fontSize:11, color:'#94a3b8' }}>Tip: USB barcode gun works anytime - just scan and product is added instantly</div>
           </div>
 
           {showScanner && <BarcodeScanner title="Scan Product Barcode" onDetected={handleScanDetected} onClose={() => setShowScanner(false)} />}
 
           <div style={{ marginBottom:24 }}>
             <table className="data-table" style={{ fontSize:13 }}>
-              <thead><tr><th>#</th><th>Product</th><th>SKU</th><th style={{width:80}}>Qty</th><th style={{width:100}}>Rate (â‚¹)</th><th style={{width:100}}>Amount (â‚¹)</th><th></th></tr></thead>
+              <thead><tr><th>#</th><th>Product</th><th>SKU</th><th style={{width:80}}>Qty</th><th style={{width:100}}>Rate (Rs.)</th><th style={{width:100}}>Amount (Rs.)</th><th></th></tr></thead>
               <tbody>
                 {items.length === 0 && <tr><td colSpan={7} style={{ textAlign:'center', color:'#94a3b8', padding:24 }}>No items added yet</td></tr>}
                 {items.map((item, i) => (
@@ -649,8 +654,8 @@ function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
                     <td>{i+1}</td><td>{item.name}</td><td style={{ color:'#64748b' }}>{item.sku}</td>
                     <td><input type="number" min={1} className="form-input" style={{ width:70, padding:'4px 8px' }} value={item.qty} onChange={e => updateItem(i,'qty',e.target.value)} /></td>
                     <td><input type="number" min={0} className="form-input" style={{ width:90, padding:'4px 8px' }} value={item.rate} onChange={e => updateItem(i,'rate',e.target.value)} /></td>
-                    <td style={{ fontWeight:600 }}>â‚¹{item.amount.toLocaleString()}</td>
-                    <td><button onClick={() => removeItem(i)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ef4444', fontSize:16 }}>âœ•</button></td>
+                    <td style={{ fontWeight:600 }}>Rs.{item.amount.toLocaleString()}</td>
+                    <td><button onClick={() => removeItem(i)} style={{ background:'none', border:'none', cursor:'pointer', color:'#ef4444', fontSize:16, fontWeight:700 }}>x</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -666,11 +671,11 @@ function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
           <div>
             <div style={{ fontWeight:600, marginBottom:10, fontSize:14 }}>Payment Mode</div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-              {['Cash','Card','UPI','EFT','Split'].map(mode => (
-                <button key={mode} type="button" onClick={() => setPaymentMode(mode)}
+              {['Cash','Card','UPI','EFT','Split'].map(m => (
+                <button key={m} type="button" onClick={() => setPaymentMode(m)}
                   style={{ padding:'6px 14px', borderRadius:20, border:'1px solid', fontSize:12, cursor:'pointer', fontWeight:500,
-                    background: paymentMode===mode?'#1e293b':'#fff', color: paymentMode===mode?'#fff':'#64748b', borderColor: paymentMode===mode?'#1e293b':'#e2e8f0' }}>
-                  {mode}
+                    background: paymentMode===m?'#1e293b':'#fff', color: paymentMode===m?'#fff':'#64748b', borderColor: paymentMode===m?'#1e293b':'#e2e8f0' }}>
+                  {m}
                 </button>
               ))}
             </div>
@@ -693,19 +698,19 @@ function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
             <div style={{ fontWeight:600, marginBottom:10, fontSize:14 }}>Adjustments</div>
             <div style={{ display:'flex', gap:10 }}>
               <div style={{ flex:1 }}><label className="form-label" style={{ fontSize:11 }}>Tax (%)</label><input type="number" min={0} max={100} className="form-input" value={taxPct} onChange={e => setTaxPct(parseFloat(e.target.value)||0)} /></div>
-              <div style={{ flex:1 }}><label className="form-label" style={{ fontSize:11 }}>Discount (â‚¹)</label><input type="number" min={0} className="form-input" value={discount} onChange={e => setDiscount(e.target.value)} /></div>
+              <div style={{ flex:1 }}><label className="form-label" style={{ fontSize:11 }}>Discount (Rs.)</label><input type="number" min={0} className="form-input" value={discount} onChange={e => setDiscount(e.target.value)} /></div>
             </div>
           </div>
 
           <div style={{ background:'#f8fafc', borderRadius:10, padding:16, border:'1px solid #e2e8f0' }}>
             <div style={{ fontWeight:600, marginBottom:12, fontSize:14 }}>Summary</div>
             <div style={{ display:'flex', flexDirection:'column', gap:8, fontSize:13 }}>
-              <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ color:'#64748b' }}>Subtotal</span><span>â‚¹{subtotal.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
-              <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ color:'#64748b' }}>Tax ({taxPct}%)</span><span>â‚¹{taxAmt.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
-              <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ color:'#64748b' }}>Discount</span><span style={{ color:'#ef4444' }}>-â‚¹{(parseFloat(discount)||0).toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+              <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ color:'#64748b' }}>Subtotal</span><span>Rs.{subtotal.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+              <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ color:'#64748b' }}>Tax ({taxPct}%)</span><span>Rs.{taxAmt.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+              <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ color:'#64748b' }}>Discount</span><span style={{ color:'#ef4444' }}>-Rs.{(parseFloat(discount)||0).toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
               <div style={{ height:1, background:'#e2e8f0', margin:'4px 0' }} />
-              <div style={{ display:'flex', justifyContent:'space-between', fontWeight:700, fontSize:16 }}><span>Grand Total</span><span>â‚¹{grandTotal.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
-              {isCreditSale && <div style={{ marginTop:4, padding:'6px 10px', background:'#fef3c7', borderRadius:6, fontSize:11, color:'#92400e', textAlign:'center' }}>Credit Sale â€” payment due later</div>}
+              <div style={{ display:'flex', justifyContent:'space-between', fontWeight:700, fontSize:16 }}><span>Grand Total</span><span>Rs.{grandTotal.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+              {isCreditSale && <div style={{ marginTop:4, padding:'6px 10px', background:'#fef3c7', borderRadius:6, fontSize:11, color:'#92400e', textAlign:'center' }}>Credit Sale - payment due later</div>}
             </div>
           </div>
         </div>
@@ -714,7 +719,7 @@ function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
   );
 }
 
-// â”€â”€ ReturnExchangeTab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- ReturnExchangeTab ------------------------------------------------------
 function ReturnExchangeTab({ onCreateReturn }) {
   const [returns, setReturns] = useState([]);
   const [search, setSearch] = useState('');
@@ -736,8 +741,7 @@ function ReturnExchangeTab({ onCreateReturn }) {
     <div>
       <div className="filters-bar">
         <div style={{ position:'relative' }}>
-          <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', fontSize:13 }}>ðŸ”</span>
-          <input className="form-input" style={{ paddingLeft:32, width:280 }} placeholder="Search by invoice or customer" value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="form-input" style={{ paddingLeft:12, width:280 }} placeholder="Search by invoice or customer" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <button className="btn btn-black filters-bar-right" onClick={onCreateReturn}>+ Create Return / Exchange</button>
       </div>
@@ -755,7 +759,7 @@ function ReturnExchangeTab({ onCreateReturn }) {
                 <td>{r.customer_name || '-'}</td>
                 <td><span className={`badge ${r.type === 'Return' ? 'badge-orange' : 'badge-blue'}`}>{r.type}</span></td>
                 <td style={{ textAlign:'center' }}>{r.items_returned || 0}</td>
-                <td style={{ fontWeight:600, color:'#ef4444' }}>â‚¹{Number(r.return_amount||0).toLocaleString()}</td>
+                <td style={{ fontWeight:600, color:'#ef4444' }}>Rs.{Number(r.return_amount||0).toLocaleString()}</td>
                 <td>{(r.date||r.created_at||'').split('T')[0]}</td>
                 <td><span className={`badge ${r.status === 'Completed' ? 'badge-green' : 'badge-grey'}`}>{r.status}</span></td>
               </tr>
@@ -767,7 +771,54 @@ function ReturnExchangeTab({ onCreateReturn }) {
   );
 }
 
-// â”€â”€ BillingInvoice (main) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- ReturnPickerModal - pick a paid invoice to return ----------------------
+function ReturnPickerModal({ onClose, onPick }) {
+  const [invoices, setInvoices] = useState([]);
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    window.electron.invoke('invoices:getAll', { status: 'Paid' })
+      .then(d => setInvoices(Array.isArray(d) ? d : []));
+  }, []);
+
+  const filtered = invoices.filter(inv =>
+    !search || (inv.invoice_no||'').toLowerCase().includes(search.toLowerCase()) || (inv.customer_name||'').toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background:'#fff', borderRadius:16, width:560, maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 24px 80px rgba(0,0,0,0.2)' }}>
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid #f1f5f9' }}>
+          <div style={{ fontWeight:700, fontSize:17 }}>Select Invoice to Return</div>
+          <div style={{ fontSize:12, color:'#64748b', marginTop:4 }}>Choose the original paid invoice</div>
+        </div>
+        <div style={{ padding:'12px 24px', borderBottom:'1px solid #f1f5f9' }}>
+          <input className="form-input" placeholder="Search invoice or customer..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <div style={{ overflowY:'auto', flex:1 }}>
+          {filtered.length === 0 && <div style={{ textAlign:'center', color:'#94a3b8', padding:32 }}>No paid invoices found</div>}
+          {filtered.map(inv => (
+            <div key={inv.id} onClick={() => onPick(inv)}
+              style={{ padding:'12px 24px', borderBottom:'1px solid #f8fafc', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center' }}
+              onMouseEnter={e => e.currentTarget.style.background='#f8fafc'}
+              onMouseLeave={e => e.currentTarget.style.background='#fff'}>
+              <div>
+                <div style={{ fontWeight:600 }}>{inv.invoice_no}</div>
+                <div style={{ fontSize:12, color:'#64748b' }}>{inv.customer_name||'Walk-in'} &middot; {inv.invoice_date}</div>
+              </div>
+              <div style={{ fontWeight:700 }}>Rs.{Number(inv.grand_total||0).toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding:'14px 24px', borderTop:'1px solid #f1f5f9' }}>
+          <button className="btn btn-outline" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -- BillingInvoice (main) --------------------------------------------------
 export default function BillingInvoice() {
   const [activeTab, setActiveTab] = useState('Invoices');
   const [invoices, setInvoices] = useState([]);
@@ -802,7 +853,6 @@ export default function BillingInvoice() {
   function handleNewInvoice() { setShowStartModal(false); setShowCreate(true); }
   function handleResumeDraft(draft) { setShowStartModal(false); setShowCreate(draft); }
 
-  // For "+ Create Return" in Return tab â€” pick from paid invoices
   function openReturnPicker() { setShowReturnPicker(true); }
 
   const displayList = activeTab === 'Completed'
@@ -846,7 +896,6 @@ export default function BillingInvoice() {
         />
       )}
 
-      {/* Return picker â€” pick invoice to return from */}
       {showReturnPicker && (
         <ReturnPickerModal
           onClose={() => setShowReturnPicker(false)}
@@ -871,8 +920,7 @@ export default function BillingInvoice() {
         <>
           <div className="filters-bar">
             <div style={{ position:'relative' }}>
-              <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', fontSize:13 }}>ðŸ”</span>
-              <input className="form-input" style={{ paddingLeft:32, width:280 }} placeholder="Search invoice, customer or amount" value={search} onChange={e => setSearch(e.target.value)} />
+              <input className="form-input" style={{ paddingLeft:12, width:280 }} placeholder="Search invoice, customer or amount" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <select className="form-select" style={{ width:130 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
               <option>All</option><option>Paid</option><option>Draft</option><option>Credit</option><option>Completed</option>
@@ -899,7 +947,7 @@ export default function BillingInvoice() {
                     <td>{inv.customer_name || 'Walk-in'}</td>
                     <td>{inv.customer_phone || '-'}</td>
                     <td style={{ textAlign:'center' }}>{inv.item_count || '-'}</td>
-                    <td style={{ fontWeight:600 }}>â‚¹{Number(inv.grand_total||0).toLocaleString()}</td>
+                    <td style={{ fontWeight:600 }}>Rs.{Number(inv.grand_total||0).toLocaleString()}</td>
                     <td>{inv.payment_mode}</td>
                     <td>{inv.invoice_date}</td>
                     <td>
@@ -909,14 +957,14 @@ export default function BillingInvoice() {
                     </td>
                     <td>
                       <KebabMenu items={[
-                        { label:'View Details', icon:'ðŸ‘', action:() => setViewInvoice(inv.id) },
-                        { label:'Print', icon:'ðŸ–¨ï¸', action:async () => {
+                        { label:'View Details', icon:'[+]', action:() => setViewInvoice(inv.id) },
+                        { label:'Print', icon:'[P]', action:async () => {
                           const full = await window.electron.invoke('invoices:getById', { id: inv.id });
                           printInvoice(full);
                         }},
-                        ...(inv.status === 'Credit' ? [{ label:'Mark as Paid', icon:'ðŸ’³', action:() => setPayInvoice(inv) }] : []),
-                        ...((inv.status === 'Paid' || inv.status === 'Credit') ? [{ label:'Return / Exchange', icon:'â†©', action:() => setReturnInvoice(inv) }] : []),
-                        { label:'Delete', icon:'ðŸ—‘ï¸', action:() => deleteInvoice(inv.id), danger:true },
+                        ...(inv.status === 'Credit' ? [{ label:'Mark as Paid', icon:'[$]', action:() => setPayInvoice(inv) }] : []),
+                        ...((inv.status === 'Paid' || inv.status === 'Credit') ? [{ label:'Return / Exchange', icon:'[R]', action:() => setReturnInvoice(inv) }] : []),
+                        { label:'Delete', icon:'[X]', action:() => deleteInvoice(inv.id), danger:true },
                       ]} />
                     </td>
                   </tr>
@@ -926,53 +974,6 @@ export default function BillingInvoice() {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-// â”€â”€ ReturnPickerModal â€” pick a paid invoice to return â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function ReturnPickerModal({ onClose, onPick }) {
-  const [invoices, setInvoices] = useState([]);
-  const [search, setSearch] = useState('');
-
-  useEffect(() => {
-    window.electron.invoke('invoices:getAll', { status: 'Paid' })
-      .then(d => setInvoices(Array.isArray(d) ? d : []));
-  }, []);
-
-  const filtered = invoices.filter(inv =>
-    !search || (inv.invoice_no||'').toLowerCase().includes(search.toLowerCase()) || (inv.customer_name||'').toLowerCase().includes(search.toLowerCase())
-  );
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background:'#fff', borderRadius:16, width:560, maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 24px 80px rgba(0,0,0,0.2)' }}>
-        <div style={{ padding:'20px 24px', borderBottom:'1px solid #f1f5f9' }}>
-          <div style={{ fontWeight:700, fontSize:17 }}>Select Invoice to Return</div>
-          <div style={{ fontSize:12, color:'#64748b', marginTop:4 }}>Choose the original paid invoice</div>
-        </div>
-        <div style={{ padding:'12px 24px', borderBottom:'1px solid #f1f5f9' }}>
-          <input className="form-input" placeholder="Search invoice or customer..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <div style={{ overflowY:'auto', flex:1 }}>
-          {filtered.length === 0 && <div style={{ textAlign:'center', color:'#94a3b8', padding:32 }}>No paid invoices found</div>}
-          {filtered.map(inv => (
-            <div key={inv.id} onClick={() => onPick(inv)}
-              style={{ padding:'12px 24px', borderBottom:'1px solid #f8fafc', cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center' }}
-              onMouseEnter={e => e.currentTarget.style.background='#f8fafc'}
-              onMouseLeave={e => e.currentTarget.style.background='#fff'}>
-              <div>
-                <div style={{ fontWeight:600 }}>{inv.invoice_no}</div>
-                <div style={{ fontSize:12, color:'#64748b' }}>{inv.customer_name||'Walk-in'} Â· {inv.invoice_date}</div>
-              </div>
-              <div style={{ fontWeight:700 }}>â‚¹{Number(inv.grand_total||0).toLocaleString()}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ padding:'14px 24px', borderTop:'1px solid #f1f5f9' }}>
-          <button className="btn btn-outline" onClick={onClose}>Cancel</button>
-        </div>
-      </div>
     </div>
   );
 }
