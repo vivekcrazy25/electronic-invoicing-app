@@ -595,12 +595,16 @@ function CurrencyLanguage() {
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, maxWidth:600 }}>
         <div>
           <label className="form-label">Currency</label>
-          <select className="form-select" value={settings.currency} onChange={e => setSettings(p => ({...p, currency:e.target.value}))}>
-            <option value="INR">INR — Indian Rupee</option>
-            <option value="USD">USD — US Dollar</option>
-            <option value="EUR">EUR — Euro</option>
-            <option value="GBP">GBP — British Pound</option>
-            <option value="AED">AED — UAE Dirham</option>
+          <select className="form-select" value={settings.currency} onChange={e => {
+            const symbolMap = { INR:'₹', USD:'$', EUR:'€', GBP:'£', AED:'د.إ', ZAR:'R' };
+            setSettings(p => ({...p, currency:e.target.value, currency_symbol: symbolMap[e.target.value] || p.currency_symbol }));
+          }}>
+            <option value="INR">INR — Indian Rupee (₹)</option>
+            <option value="USD">USD — US Dollar ($)</option>
+            <option value="EUR">EUR — Euro (€)</option>
+            <option value="GBP">GBP — British Pound (£)</option>
+            <option value="AED">AED — UAE Dirham (د.إ)</option>
+            <option value="ZAR">ZAR — South African Rand (R)</option>
           </select>
         </div>
         <div>
@@ -610,10 +614,26 @@ function CurrencyLanguage() {
         <div>
           <label className="form-label">Language</label>
           <select className="form-select" value={settings.language} onChange={e => setSettings(p => ({...p, language:e.target.value}))}>
-            <option value="en">English</option>
-            <option value="hi">Hindi</option>
-            <option value="ta">Tamil</option>
-            <option value="te">Telugu</option>
+            <optgroup label="English">
+              <option value="en">English</option>
+              <option value="en-ZA">English (South Africa)</option>
+            </optgroup>
+            <optgroup label="South African Languages">
+              <option value="af">Afrikaans</option>
+              <option value="zu">Zulu (isiZulu)</option>
+              <option value="xh">Xhosa (isiXhosa)</option>
+              <option value="st">Sotho (Sesotho)</option>
+              <option value="tn">Tswana (Setswana)</option>
+              <option value="ts">Tsonga (Xitsonga)</option>
+              <option value="ve">Venda (Tshivenda)</option>
+              <option value="nr">Ndebele (isiNdebele)</option>
+              <option value="ss">Swati (siSwati)</option>
+            </optgroup>
+            <optgroup label="Indian Languages">
+              <option value="hi">Hindi</option>
+              <option value="ta">Tamil</option>
+              <option value="te">Telugu</option>
+            </optgroup>
           </select>
         </div>
         <div>
