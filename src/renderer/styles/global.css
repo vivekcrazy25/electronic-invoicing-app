@@ -31,18 +31,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .page-subtitle { font-size: 13px; color: #6b7280; margin-top: 2px; }
 
 /* Stat Cards */
-.stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
-.stat-card { border-radius: 12px; padding: 18px; position: relative; }
+.stat-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+.stat-card { border-radius: 14px; padding: 24px 22px; position: relative; min-height: 140px; display: flex; flex-direction: column; justify-content: space-between; }
 .stat-card.blue { background: #dbeafe; }
 .stat-card.pink { background: #fce7f3; }
 .stat-card.yellow { background: #fef9c3; }
 .stat-card.green { background: #dcfce7; }
-.stat-card-label { font-size: 12px; color: #6b7280; font-weight: 500; }
-.stat-card-value { font-size: 28px; font-weight: 700; color: #111; margin: 6px 0 4px; }
+.stat-card-label { font-size: 13px; color: #6b7280; font-weight: 500; }
+.stat-card-value { font-size: 32px; font-weight: 700; color: #111; margin: 10px 0 6px; }
 .stat-card-trend { font-size: 12px; }
 .stat-card-trend.up { color: #16a34a; }
 .stat-card-trend.down { color: #dc2626; }
-.stat-card-icon { position: absolute; top: 16px; right: 16px; color: #6b7280; }
+.stat-card-icon { position: absolute; top: 18px; right: 18px; font-size: 22px; color: #6b7280; }
 
 /* Tables */
 .data-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; }

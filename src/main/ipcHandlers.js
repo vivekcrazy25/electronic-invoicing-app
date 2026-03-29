@@ -412,6 +412,20 @@ module.exports = function registerHandlers({ getDb }) {
     return { success: true };
   });
 
+  ipcMain.handle('purchases:updateStatus', async (_, { id, status }) => {
+    const db = getDb();
+    const pi = db.prepare(`SELECT status FROM purchase_invoices WHERE id = ?`).get(id);
+    if (!pi) return { success: false, error: 'Not found' };
+    db.prepare(`UPDATE purchase_invoices SET status = ? WHERE id = ?`).run(status, id);
+    // When marking as Received, update stock for all items
+    if (status === 'Received' && pi.status !== 'Received') {
+      const items = db.prepare(`SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?`).all(id);
+      const updStock = db.prepare(`UPDATE products SET current_stock = current_stock + ?, status = CASE WHEN current_stock + ? <= 5 THEN 'Critical' WHEN current_stock + ? <= reorder_level THEN 'Low' ELSE 'Good' END WHERE id = ?`);
+      for (const item of items) updStock.run(item.qty, item.qty, item.qty, item.product_id);
+    }
+    return { success: true };
+  });
+
   ipcMain.handle('purchases:createReturn', async (_, data) => {
     const db = getDb();
     const r = db.prepare(`INSERT INTO purchase_returns (po_number,vendor_id,vendor_name,original_invoice_id,purchased_qty,return_qty,return_total,return_reason,status,order_date) VALUES (?,?,?,?,?,?,?,?,?,?)`)
