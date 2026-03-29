@@ -804,4 +804,61 @@ module.exports = function registerHandlers({ getDb }) {
     const r = db.prepare(`INSERT INTO notifications (type,title,message,link) VALUES (?,?,?,?)`).run(type, title, message, link || null);
     return { success: true, id: r.lastInsertRowid };
   });
+
+  // ─── CLEAR DATA ───────────────────────────────────────────────────────────
+  // Each module maps to the tables that hold its transactional data.
+  // Lookup/config tables (categories, vendors, products) are treated as
+  // "inventory" and "vendors" scope respectively.
+  const CLEAR_TABLES = {
+    billing:   ['invoice_items', 'invoices', 'return_exchange_items', 'return_exchange'],
+    inventory: ['products', 'categories'],
+    vendors:   ['purchase_return_items', 'purchase_returns', 'purchase_invoice_items', 'purchase_invoices', 'pay_bills', 'vendors'],
+    banking:   ['banking_transactions'],
+    expenses:  ['expenses'],
+    reports:   [],   // reports are derived — nothing to delete
+    notifications: ['notifications'],
+  };
+
+  ipcMain.handle('settings:clearData', async (_, { modules } = {}) => {
+    const db = getDb();
+    const cleared = [];
+    const errors = [];
+
+    const clearAll = db.transaction((mods) => {
+      for (const mod of mods) {
+        const tables = CLEAR_TABLES[mod];
+        if (!tables || tables.length === 0) continue;
+        for (const tbl of tables) {
+          try {
+            db.prepare(`DELETE FROM ${tbl}`).run();
+            cleared.push(tbl);
+          } catch (e) {
+            errors.push(`${tbl}: ${e.message}`);
+          }
+        }
+      }
+    });
+
+    clearAll(modules || []);
+
+    // Log to backup activity
+    if (cleared.length > 0) {
+      const now = new Date().toISOString();
+      db.prepare(`INSERT INTO backups (type,date_time,size_mb,status) VALUES (?,?,0.0,'Success')`).run(`Data Cleared (${modules.join(', ')})`, now);
+    }
+
+    return { success: errors.length === 0, cleared, errors };
+  });
+
+  ipcMain.handle('settings:getTableCounts', async () => {
+    const db = getDb();
+    return {
+      billing:   db.prepare(`SELECT COUNT(*) as c FROM invoices`).get().c,
+      inventory: db.prepare(`SELECT COUNT(*) as c FROM products`).get().c,
+      vendors:   db.prepare(`SELECT COUNT(*) as c FROM vendors`).get().c,
+      banking:   db.prepare(`SELECT COUNT(*) as c FROM banking_transactions`).get().c,
+      expenses:  db.prepare(`SELECT COUNT(*) as c FROM expenses`).get().c,
+      notifications: db.prepare(`SELECT COUNT(*) as c FROM notifications`).get().c,
+    };
+  });
 };

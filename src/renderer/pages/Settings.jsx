@@ -496,9 +496,163 @@ function PermissionsModal({ user, permsMap, onToggle, onSave, onReset, onClose }
   );
 }
 
+// ── CLEAR DATA MODAL ──────────────────────────────────────────────────────────
+const CLEARABLE_MODULES = [
+  { key: 'billing',       label: 'Billing & Invoices',     icon: '🧾', desc: 'Invoices, returns & exchanges', color: '#3b82f6' },
+  { key: 'inventory',     label: 'Inventory & Services',   icon: '📦', desc: 'Products & categories',         color: '#f97316' },
+  { key: 'vendors',       label: 'Vendors & Purchases',    icon: '🚚', desc: 'Vendors, purchase orders, bills', color: '#8b5cf6' },
+  { key: 'banking',       label: 'Banking',                icon: '🏦', desc: 'All banking transactions',      color: '#0ea5e9' },
+  { key: 'expenses',      label: 'Expenses',               icon: '💵', desc: 'All expense records',           color: '#ef4444' },
+  { key: 'notifications', label: 'Notifications',          icon: '🔔', desc: 'All notification history',      color: '#64748b' },
+];
+
+function ClearDataModal({ onClose, onCleared }) {
+  const [selected, setSelected] = useState({});
+  const [counts, setCounts] = useState({});
+  const [step, setStep] = useState('select'); // 'select' | 'confirm'
+  const [clearing, setClearing] = useState(false);
+
+  useEffect(() => {
+    window.electron.invoke('settings:getTableCounts', {}).then(setCounts).catch(() => {});
+  }, []);
+
+  function toggle(key) {
+    setSelected(prev => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  const chosen = CLEARABLE_MODULES.filter(m => selected[m.key]);
+
+  async function confirmClear() {
+    if (chosen.length === 0) return;
+    setClearing(true);
+    const r = await window.electron.invoke('settings:clearData', { modules: chosen.map(m => m.key) });
+    setClearing(false);
+    if (r.success) {
+      toast.success(`Cleared: ${chosen.map(m => m.label).join(', ')}`);
+      onCleared();
+      onClose();
+    } else {
+      toast.error('Some tables could not be cleared: ' + r.errors.join(', '));
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background:'#fff', borderRadius:16, width:560, maxHeight:'88vh', overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 24px 80px rgba(0,0,0,0.2)' }}>
+
+        {/* Header */}
+        <div style={{ padding:'24px 28px 18px', borderBottom:'1px solid #f1f5f9' }}>
+          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between' }}>
+            <div style={{ display:'flex', gap:12, alignItems:'center' }}>
+              <div style={{ width:42, height:42, borderRadius:12, background:'#fef2f2', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22 }}>🗑️</div>
+              <div>
+                <div style={{ fontWeight:700, fontSize:16 }}>Clear Data</div>
+                <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>Permanently delete records from selected modules</div>
+              </div>
+            </div>
+            <button onClick={onClose} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:'#94a3b8', lineHeight:1 }}>✕</button>
+          </div>
+        </div>
+
+        {step === 'select' && (
+          <>
+            <div style={{ overflowY:'auto', padding:'20px 28px', flex:1 }}>
+              <div style={{ fontSize:12, color:'#64748b', marginBottom:16 }}>
+                Select which module data you want to permanently remove. This action cannot be undone.
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {CLEARABLE_MODULES.map(mod => {
+                  const active = !!selected[mod.key];
+                  const count = counts[mod.key] ?? '...';
+                  return (
+                    <div
+                      key={mod.key}
+                      onClick={() => toggle(mod.key)}
+                      style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 16px', borderRadius:12, cursor:'pointer', border: active ? `1.5px solid ${mod.color}` : '1.5px solid #e2e8f0', background: active ? `${mod.color}08` : '#fff', transition:'all 0.15s' }}
+                    >
+                      {/* Icon */}
+                      <div style={{ width:40, height:40, borderRadius:10, background: active ? `${mod.color}18` : '#f8fafc', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>
+                        {mod.icon}
+                      </div>
+                      {/* Info */}
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontWeight:600, fontSize:13, color: active ? '#111' : '#374151' }}>{mod.label}</div>
+                        <div style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>{mod.desc}</div>
+                      </div>
+                      {/* Record count badge */}
+                      <div style={{ fontSize:12, fontWeight:600, color: count > 0 ? mod.color : '#94a3b8', background: count > 0 ? `${mod.color}12` : '#f1f5f9', borderRadius:8, padding:'3px 10px', flexShrink:0 }}>
+                        {count} records
+                      </div>
+                      {/* Checkbox */}
+                      <div style={{ width:20, height:20, borderRadius:5, border: active ? `2px solid ${mod.color}` : '2px solid #d1d5db', background: active ? mod.color : '#fff', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, color:'#fff', fontWeight:700, transition:'all 0.15s' }}>
+                        {active && '✓'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ padding:'16px 28px', borderTop:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <span style={{ fontSize:12, color:'#94a3b8' }}>{chosen.length} module{chosen.length !== 1 ? 's' : ''} selected</span>
+              <div style={{ display:'flex', gap:10 }}>
+                <button className="btn btn-outline" onClick={onClose}>Cancel</button>
+                <button
+                  disabled={chosen.length === 0}
+                  onClick={() => setStep('confirm')}
+                  style={{ padding:'8px 20px', borderRadius:8, fontWeight:600, fontSize:13, cursor: chosen.length === 0 ? 'not-allowed' : 'pointer', background: chosen.length > 0 ? '#ef4444' : '#f1f5f9', color: chosen.length > 0 ? '#fff' : '#94a3b8', border:'none', transition:'all 0.15s' }}
+                >
+                  Continue →
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {step === 'confirm' && (
+          <>
+            <div style={{ padding:'24px 28px', flex:1, overflowY:'auto' }}>
+              <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:12, padding:16, marginBottom:20 }}>
+                <div style={{ fontWeight:700, color:'#dc2626', marginBottom:6, fontSize:14 }}>⚠️ This action is irreversible</div>
+                <div style={{ fontSize:13, color:'#7f1d1d' }}>
+                  All records in the selected modules will be <strong>permanently deleted</strong> and cannot be recovered unless you have a backup.
+                </div>
+              </div>
+
+              <div style={{ fontWeight:600, fontSize:13, marginBottom:12 }}>You are about to clear:</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                {chosen.map(mod => (
+                  <div key={mod.key} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:10, background:'#fef2f2', border:'1px solid #fecaca' }}>
+                    <span style={{ fontSize:18 }}>{mod.icon}</span>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontWeight:600, fontSize:13 }}>{mod.label}</div>
+                      <div style={{ fontSize:11, color:'#94a3b8' }}>{counts[mod.key] ?? 0} records will be deleted</div>
+                    </div>
+                    <span style={{ fontSize:12, color:'#ef4444', fontWeight:600 }}>DELETE</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ padding:'16px 28px', borderTop:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <button className="btn btn-outline" onClick={() => setStep('select')}>← Back</button>
+              <button
+                disabled={clearing}
+                onClick={confirmClear}
+                style={{ padding:'8px 24px', borderRadius:8, fontWeight:700, fontSize:13, cursor: clearing ? 'not-allowed' : 'pointer', background:'#ef4444', color:'#fff', border:'none' }}
+              >
+                {clearing ? 'Clearing...' : '🗑️ Yes, Clear Selected Data'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── BACKUP & SECURITY ─────────────────────────────────────────────────────────
 function BackupSecurity() {
   const [logs, setLogs] = useState([]);
+  const [showClear, setShowClear] = useState(false);
 
   function load() {
     window.electron.invoke('backup:getLogs').then(setLogs);
@@ -558,6 +712,12 @@ function BackupSecurity() {
       <div style={{ display:'flex', gap:12, marginBottom:24 }}>
         <button className="btn btn-black" onClick={backupNow}>☁ Backup Now</button>
         <button className="btn btn-outline" onClick={restoreBackup}>↺ Restore Data</button>
+        <button
+          onClick={() => setShowClear(true)}
+          style={{ padding:'8px 16px', borderRadius:8, fontWeight:600, fontSize:13, cursor:'pointer', background:'#fef2f2', color:'#ef4444', border:'1.5px solid #fecaca' }}
+        >
+          🗑️ Clear Data
+        </button>
       </div>
 
       <div style={{ fontWeight:700, marginBottom:12 }}>Recent Activity</div>
@@ -567,7 +727,7 @@ function BackupSecurity() {
           {logs.length === 0 && <tr><td colSpan={4} style={{ textAlign:'center', color:'#9ca3af', padding:20 }}>No backups yet</td></tr>}
           {logs.map((l,i) => (
             <tr key={i}>
-              <td style={{ display:'flex', alignItems:'center', gap:8 }}><span>{l.type?.includes('Manual')?'👤':'⏱'}</span>{l.type}</td>
+              <td style={{ display:'flex', alignItems:'center', gap:8 }}><span>{l.type?.includes('Manual')?'👤':l.type?.includes('Cleared')?'🗑️':'⏱'}</span>{l.type}</td>
               <td>{l.date_time?.replace('T',' ').split('.')[0]}</td>
               <td>{l.size_mb ? `${l.size_mb} MB` : '--'}</td>
               <td><span className={`badge ${l.status==='Success'?'badge-green':'badge-red'}`}>● {l.status}</span></td>
@@ -575,6 +735,8 @@ function BackupSecurity() {
           ))}
         </tbody>
       </table>
+
+      {showClear && <ClearDataModal onClose={() => setShowClear(false)} onCleared={load} />}
     </div>
   );
 }
