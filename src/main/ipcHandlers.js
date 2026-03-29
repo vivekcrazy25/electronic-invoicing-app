@@ -214,6 +214,47 @@ module.exports = function registerHandlers({ getDb }) {
     return { success: true };
   });
 
+  ipcMain.handle('invoices:update', async (_, { id, data }) => {
+    const db = getDb();
+    db.prepare(`
+      UPDATE invoices SET
+        invoice_date=@invoice_date, customer_name=@customer_name, customer_phone=@customer_phone,
+        seller_id=@seller_id, branch_id=@branch_id, subtotal=@subtotal, tax_amount=@tax_amount,
+        grand_total=@grand_total, payment_mode=@payment_mode, cash_amount=@cash_amount,
+        online_amount=@online_amount, internal_notes=@internal_notes, status=@status,
+        type=@type, is_credit_sale=@is_credit_sale, paid_amount=@paid_amount,
+        updated_at=datetime('now')
+      WHERE id=@id
+    `).run({
+      id,
+      invoice_date: data.invoice_date,
+      customer_name: data.customer_name || '',
+      customer_phone: data.customer_phone || '',
+      seller_id: data.seller_id || null,
+      branch_id: data.branch_id || null,
+      subtotal: data.subtotal || 0,
+      tax_amount: data.tax_amount || 0,
+      grand_total: data.grand_total || 0,
+      payment_mode: data.payment_mode || 'Cash',
+      cash_amount: data.cash_amount || null,
+      online_amount: data.online_amount || null,
+      internal_notes: data.internal_notes || '',
+      status: data.status || 'Draft',
+      type: data.type || 'Sale',
+      is_credit_sale: data.is_credit_sale || 0,
+      paid_amount: data.paid_amount || 0,
+    });
+    // Replace items
+    if (data.items && data.items.length) {
+      db.prepare(`DELETE FROM invoice_items WHERE invoice_id = ?`).run(id);
+      const insItem = db.prepare(`INSERT INTO invoice_items (invoice_id, product_id, product_code, product_name, qty, rate, amount) VALUES (?,?,?,?,?,?,?)`);
+      for (const item of data.items) {
+        insItem.run(id, item.product_id, item.product_code || '', item.product_name || item.name || '', item.qty, item.rate, item.amount);
+      }
+    }
+    return { success: true };
+  });
+
   // ─── RETURN & EXCHANGE ────────────────────────────────────────────────────
   ipcMain.handle('returns:getAll', async () => {
     const db = getDb();
