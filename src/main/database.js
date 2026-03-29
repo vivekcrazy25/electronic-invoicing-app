@@ -11,6 +11,7 @@ function initialize() {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   createTables();
+  runMigrations();
   seedDefaultData();
   return db;
 }
@@ -333,6 +334,33 @@ function createTables() {
   `);
 }
 
+function runMigrations() {
+  // Add branch_id to users
+  try { db.exec(`ALTER TABLE users ADD COLUMN branch_id INTEGER REFERENCES branches(id)`); } catch(e) {}
+  // Add branch_id to products
+  try { db.exec(`ALTER TABLE products ADD COLUMN branch_id INTEGER REFERENCES branches(id)`); } catch(e) {}
+  // Add branch_id to expenses
+  try { db.exec(`ALTER TABLE expenses ADD COLUMN branch_id INTEGER REFERENCES branches(id)`); } catch(e) {}
+  // Add branch_id to banking_transactions
+  try { db.exec(`ALTER TABLE banking_transactions ADD COLUMN branch_id INTEGER REFERENCES branches(id)`); } catch(e) {}
+  // Add branch_id to customers
+  try { db.exec(`ALTER TABLE customers ADD COLUMN branch_id INTEGER REFERENCES branches(id)`); } catch(e) {}
+  // Add code and contact to branches
+  try { db.exec(`ALTER TABLE branches ADD COLUMN code TEXT`); } catch(e) {}
+  try { db.exec(`ALTER TABLE branches ADD COLUMN contact TEXT`); } catch(e) {}
+  // App settings table
+  db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+  )`);
+  // Seed default settings
+  const insSet = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
+  insSet.run('currency', 'INR');
+  insSet.run('currency_symbol', '₹');
+  insSet.run('language', 'en');
+  insSet.run('date_format', 'DD/MM/YYYY');
+}
+
 function seedDefaultData() {
   const bcrypt = require('bcryptjs');
 
@@ -614,4 +642,4 @@ function seedDefaultData() {
   }
 }
 
-module.exports = { initialize, getDb };
+module.exports = { initialize, getDb, runMigrations };

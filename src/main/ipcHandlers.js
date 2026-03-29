@@ -55,36 +55,30 @@ module.exports = function registerHandlers({ getDb }) {
   });
 
   // ─── DASHBOARD ────────────────────────────────────────────────────────────
-  ipcMain.handle('dashboard:getStats', async () => {
+  ipcMain.handle('dashboard:getStats', async (_, { branch_id } = {}) => {
     const db = getDb();
-    const totalSale = db.prepare(`SELECT COALESCE(SUM(grand_total),0) as val FROM invoices WHERE status != 'Draft'`).get().val;
-    const totalProfit = db.prepare(`SELECT COALESCE(SUM(ii.qty * (ii.rate - p.purchase_price)),0) as val FROM invoice_items ii JOIN products p ON p.id = ii.product_id JOIN invoices i ON i.id = ii.invoice_id WHERE i.status != 'Draft'`).get().val;
-    const pendingPayment = db.prepare(`SELECT COALESCE(SUM(grand_total - paid_amount),0) as val FROM invoices WHERE is_credit_sale = 1 AND status != 'Draft'`).get().val;
+    const bFilter = branch_id ? `AND branch_id = ${parseInt(branch_id)}` : '';
+    const totalSale = db.prepare(`SELECT COALESCE(SUM(grand_total),0) as val FROM invoices WHERE status NOT IN ('Draft') ${bFilter}`).get().val;
+    const totalProfit = db.prepare(`SELECT COALESCE(SUM(ii.qty * (ii.rate - p.purchase_price)),0) as val FROM invoice_items ii JOIN products p ON p.id = ii.product_id JOIN invoices i ON i.id = ii.invoice_id WHERE i.status NOT IN ('Draft') ${bFilter.replace('branch_id','i.branch_id')}`).get().val;
+    const pendingPayment = db.prepare(`SELECT COALESCE(SUM(grand_total - paid_amount),0) as val FROM invoices WHERE is_credit_sale = 1 AND status NOT IN ('Draft') ${bFilter}`).get().val;
     const cashBalance = db.prepare(`SELECT COALESCE(SUM(current_balance),0) as val FROM accounts WHERE account_type = 'Cash'`).get().val;
     const bankBalance = db.prepare(`SELECT COALESCE(SUM(current_balance),0) as val FROM accounts WHERE account_type = 'Bank'`).get().val;
     const lowStock = db.prepare(`SELECT COUNT(*) as val FROM products WHERE status IN ('Low','Critical') AND is_active = 1`).get().val;
-    const monthlySales = db.prepare(`
-      SELECT strftime('%m', invoice_date) as month, COALESCE(SUM(grand_total),0) as total
-      FROM invoices WHERE status != 'Draft' AND strftime('%Y', invoice_date) = strftime('%Y','now')
-      GROUP BY month ORDER BY month
-    `).all();
-    const recentInvoices = db.prepare(`SELECT * FROM invoices ORDER BY created_at DESC LIMIT 5`).all();
-    const topItems = db.prepare(`
-      SELECT ii.product_name, SUM(ii.qty) as units_sold, SUM(ii.amount) as revenue
-      FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
-      WHERE i.status != 'Draft'
-      GROUP BY ii.product_name ORDER BY units_sold DESC LIMIT 7
-    `).all();
-    return { totalSale, totalProfit, pendingPayment, cashBalance, bankBalance, lowStock, monthlySales, recentInvoices, topItems };
+    const monthlySales = db.prepare(`SELECT strftime('%m', invoice_date) as month, COALESCE(SUM(grand_total),0) as total FROM invoices WHERE status NOT IN ('Draft') AND strftime('%Y', invoice_date) = strftime('%Y','now') ${bFilter} GROUP BY month ORDER BY month`).all();
+    const recentInvoices = db.prepare(`SELECT * FROM invoices WHERE 1=1 ${bFilter} ORDER BY created_at DESC LIMIT 5`).all();
+    const topItems = db.prepare(`SELECT ii.product_name, SUM(ii.qty) as units_sold, SUM(ii.amount) as revenue FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.status NOT IN ('Draft') ${bFilter.replace('branch_id','i.branch_id')} GROUP BY ii.product_name ORDER BY units_sold DESC LIMIT 7`).all();
+    const branchRevenue = db.prepare(`SELECT b.name, COALESCE(SUM(i.grand_total),0) as revenue FROM branches b LEFT JOIN invoices i ON i.branch_id = b.id AND i.status NOT IN ('Draft') WHERE b.is_active=1 GROUP BY b.id, b.name ORDER BY revenue DESC`).all();
+    return { totalSale, totalProfit, pendingPayment, cashBalance, bankBalance, lowStock, monthlySales, recentInvoices, topItems, branchRevenue };
   });
 
   // ─── INVOICES ─────────────────────────────────────────────────────────────
-  ipcMain.handle('invoices:getAll', async (_, { status, search } = {}) => {
+  ipcMain.handle('invoices:getAll', async (_, { status, search, branch_id } = {}) => {
     const db = getDb();
     let q = `SELECT i.*, u.name as seller_name, (SELECT COUNT(*) FROM invoice_items WHERE invoice_id=i.id) as item_count FROM invoices i LEFT JOIN users u ON u.id = i.seller_id WHERE 1=1`;
     const params = [];
     if (status && status !== 'All') { q += ` AND i.status = ?`; params.push(status); }
     if (search) { q += ` AND (i.invoice_no LIKE ? OR i.customer_name LIKE ? OR i.customer_phone LIKE ?)`; const s = `%${search}%`; params.push(s, s, s); }
+    if (branch_id) { q += ` AND i.branch_id = ?`; params.push(branch_id); }
     q += ` ORDER BY i.created_at DESC`;
     return db.prepare(q).all(...params);
   });
@@ -146,6 +140,21 @@ module.exports = function registerHandlers({ getDb }) {
         if (data.status !== 'Draft') updStock.run(item.qty, item.qty, item.qty, item.product_id);
       }
     }
+    // Auto-create banking transaction for paid invoices
+    if (data.status !== 'Draft' && !data.is_credit_sale) {
+      const year2 = new Date().getFullYear().toString().slice(-2);
+      const lastTxn = db.prepare(`SELECT txn_id FROM banking_transactions ORDER BY id DESC LIMIT 1`).get();
+      let txnSeq = 1;
+      if (lastTxn) { const n = parseInt(lastTxn.txn_id.replace(`TXN-${year2}`,''),10); txnSeq = isNaN(n)?1:n+1; }
+      const txn_id = `TXN-${year2}${String(txnSeq).padStart(3,'0')}`;
+      const acct = db.prepare(`SELECT id FROM accounts WHERE account_type='Cash' AND is_primary=1 LIMIT 1`).get() ||
+                   db.prepare(`SELECT id FROM accounts WHERE account_type='Cash' LIMIT 1`).get();
+      if (acct) {
+        db.prepare(`INSERT INTO banking_transactions (txn_id,account_id,account_name,date,description,type,amount) VALUES (?,?,?,?,?,?,?)`)
+          .run(txn_id, acct.id, 'Cash Account', data.invoice_date, `Sale: ${invoice_no}`, 'Credit', data.grand_total);
+        db.prepare(`UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?`).run(data.grand_total, acct.id);
+      }
+    }
     // Notify on credit sale
     if (data.is_credit_sale) {
       db.prepare(`INSERT INTO notifications (type,title,message,link) VALUES (?,?,?,?)`)
@@ -176,6 +185,15 @@ module.exports = function registerHandlers({ getDb }) {
 
   ipcMain.handle('returns:create', async (_, data) => {
     const db = getDb();
+    // Validate 15-day return window
+    if (data.original_invoice_id) {
+      const origInv = db.prepare(`SELECT invoice_date, status FROM invoices WHERE id=?`).get(data.original_invoice_id);
+      if (origInv) {
+        const daysSince = db.prepare(`SELECT CAST(julianday('now') - julianday(?) AS INTEGER) as days`).get(origInv.invoice_date).days;
+        if (daysSince > 15) return { success: false, error: 'Return period of 15 days has expired for this invoice.' };
+        if (origInv.status === 'Completed') return { success: false, error: 'This invoice is completed and cannot be returned.' };
+      }
+    }
     const ins = db.prepare(`INSERT INTO return_exchange (original_invoice_id, invoice_no, customer_name, type, total_items_sold, items_returned, return_amount, exchange_amount, net_amount, status, created_by) VALUES (@original_invoice_id,@invoice_no,@customer_name,@type,@total_items_sold,@items_returned,@return_amount,@exchange_amount,@net_amount,@status,@created_by)`);
     const r = ins.run(data);
     // restore stock for returned items
@@ -263,6 +281,13 @@ module.exports = function registerHandlers({ getDb }) {
     return { success: true, id: r.lastInsertRowid };
   });
 
+  ipcMain.handle('vendors:update', async (_, { id, ...data }) => {
+    const db = getDb();
+    db.prepare(`UPDATE vendors SET vendor_name=?,company_name=?,email=?,phone=?,street_address=?,city=?,province_state=?,postal_code=?,account_name=?,account_number=? WHERE id=?`)
+      .run(data.vendor_name, data.company_name||'', data.email||'', data.phone||'', data.street_address||'', data.city||'', data.province_state||'', data.postal_code||'', data.account_name||'', data.account_number||'', id);
+    return { success: true };
+  });
+
   ipcMain.handle('vendors:delete', async (_, { id }) => {
     const db = getDb();
     db.prepare(`DELETE FROM vendors WHERE id = ?`).run(id);
@@ -309,6 +334,33 @@ module.exports = function registerHandlers({ getDb }) {
     return { success: true };
   });
 
+  ipcMain.handle('purchases:createReturn', async (_, data) => {
+    const db = getDb();
+    const r = db.prepare(`INSERT INTO purchase_returns (po_number,vendor_id,vendor_name,original_invoice_id,purchased_qty,return_qty,return_total,return_reason,status,order_date) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(data.po_number||'', data.vendor_id||null, data.vendor_name||'', data.original_invoice_id||null,
+          data.purchased_qty||0, data.return_qty||0, data.return_total||0, data.return_reason||'', 'Pending',
+          new Date().toISOString().slice(0,10));
+    const returnId = r.lastInsertRowid;
+    if (data.items && data.items.length) {
+      const ins = db.prepare(`INSERT INTO purchase_return_items (purchase_return_id,product_id,item_name,sku,purchased_qty,return_qty,purchase_price,total) VALUES (?,?,?,?,?,?,?,?)`);
+      const updStock = db.prepare(`UPDATE products SET current_stock = current_stock - ?, status = CASE WHEN current_stock - ? <= 5 THEN 'Critical' WHEN current_stock - ? <= reorder_level THEN 'Low' ELSE 'Good' END WHERE id=?`);
+      for (const item of data.items) {
+        if (item.return_qty > 0) {
+          ins.run(returnId, item.product_id, item.item_name||'', item.sku||'', item.purchased_qty||0, item.return_qty, item.purchase_price||0, item.return_qty * (item.purchase_price||0));
+          updStock.run(item.return_qty, item.return_qty, item.return_qty, item.product_id);
+        }
+      }
+    }
+    return { success: true, id: returnId };
+  });
+  ipcMain.handle('purchases:getReturns', async () => {
+    return getDb().prepare(`SELECT pr.*, v.vendor_name as vname FROM purchase_returns pr LEFT JOIN vendors v ON v.id=pr.vendor_id ORDER BY pr.order_date DESC`).all();
+  });
+
+  ipcMain.handle('purchases:getItems', async (_, { id }) => {
+    return getDb().prepare(`SELECT * FROM purchase_invoice_items WHERE purchase_invoice_id = ?`).all(id);
+  });
+
   // ─── PAY BILLS ────────────────────────────────────────────────────────────
   ipcMain.handle('paybills:getAll', async () => {
     const db = getDb();
@@ -324,6 +376,21 @@ module.exports = function registerHandlers({ getDb }) {
     if (data.purchase_invoice_id) {
       db.prepare(`UPDATE purchase_invoices SET paid_amount = paid_amount + ?, pending_amount = pending_amount - ?, status = CASE WHEN paid_amount + ? >= grand_total THEN 'Received' ELSE 'Partial' END WHERE id = ?`)
         .run(payingAmount, payingAmount, payingAmount, data.purchase_invoice_id);
+    }
+    // Auto banking transaction for vendor payment
+    if (payingAmount > 0) {
+      const year2p = new Date().getFullYear().toString().slice(-2);
+      const lastTxnP = db.prepare(`SELECT txn_id FROM banking_transactions ORDER BY id DESC LIMIT 1`).get();
+      let txnSeqP = 1;
+      if (lastTxnP) { const n = parseInt(lastTxnP.txn_id.replace(`TXN-${year2p}`,''),10); txnSeqP = isNaN(n)?1:n+1; }
+      const txn_id_p = `TXN-${year2p}${String(txnSeqP).padStart(3,'0')}`;
+      const acctP = db.prepare(`SELECT id, account_name FROM accounts WHERE account_type='Cash' AND is_primary=1 LIMIT 1`).get() ||
+                    db.prepare(`SELECT id, account_name FROM accounts WHERE account_type='Cash' LIMIT 1`).get();
+      if (acctP) {
+        db.prepare(`INSERT INTO banking_transactions (txn_id,account_id,account_name,date,description,type,amount) VALUES (?,?,?,?,?,?,?)`)
+          .run(txn_id_p, acctP.id, acctP.account_name, paymentDate, `Vendor Payment: ${data.vendor_id}`, 'Debit', payingAmount);
+        db.prepare(`UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?`).run(payingAmount, acctP.id);
+      }
     }
     return { success: true };
   });
@@ -377,6 +444,17 @@ module.exports = function registerHandlers({ getDb }) {
     db.prepare(`INSERT INTO expenses (expense_id,title,amount,expense_date,category,account_id,paid_from) VALUES (?,?,?,?,?,?,?)`)
       .run(expense_id, data.title, data.amount, data.expense_date, data.category, data.account_id, data.paid_from);
     if (data.account_id) db.prepare(`UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?`).run(data.amount, data.account_id);
+    // Auto banking transaction
+    if (data.account_id) {
+      const year2e = new Date().getFullYear().toString().slice(-2);
+      const lastTxnE = db.prepare(`SELECT txn_id FROM banking_transactions ORDER BY id DESC LIMIT 1`).get();
+      let txnSeqE = 1;
+      if (lastTxnE) { const n = parseInt(lastTxnE.txn_id.replace(`TXN-${year2e}`,''),10); txnSeqE = isNaN(n)?1:n+1; }
+      const txn_id_e = `TXN-${year2e}${String(txnSeqE).padStart(3,'0')}`;
+      const acctE = db.prepare(`SELECT account_name FROM accounts WHERE id=?`).get(data.account_id);
+      db.prepare(`INSERT INTO banking_transactions (txn_id,account_id,account_name,date,description,type,amount) VALUES (?,?,?,?,?,?,?)`)
+        .run(txn_id_e, data.account_id, acctE?.account_name||'', data.expense_date, `Expense: ${data.title}`, 'Debit', data.amount);
+    }
     return { success: true, expense_id };
   });
 
@@ -457,6 +535,20 @@ module.exports = function registerHandlers({ getDb }) {
     return { cashAccounts, closingStock, customerOutstanding, vendorOutstanding, ownerCapital, retainedEarnings };
   });
 
+  ipcMain.handle('reports:expenses', async (_, { from, to, branch_id, category } = {}) => {
+    const db = getDb();
+    let q = `SELECT e.expense_id, e.title, e.category, e.amount, e.expense_date, e.paid_from, b.name as branch_name
+             FROM expenses e LEFT JOIN branches b ON b.id = e.branch_id WHERE 1=1`;
+    const params = [];
+    if (from && to) { q += ` AND e.expense_date BETWEEN ? AND ?`; params.push(from, to); }
+    if (branch_id) { q += ` AND e.branch_id = ?`; params.push(branch_id); }
+    if (category && category !== 'All') { q += ` AND e.category = ?`; params.push(category); }
+    q += ` ORDER BY e.expense_date DESC`;
+    const rows = db.prepare(q).all(...params);
+    const total = rows.reduce((s, r) => s + (r.amount || 0), 0);
+    return { rows, total };
+  });
+
   // ─── GLOBAL SEARCH ────────────────────────────────────────────────────────
   ipcMain.handle('search:global', async (_, { query }) => {
     const db = getDb();
@@ -488,22 +580,114 @@ module.exports = function registerHandlers({ getDb }) {
     return { success: true };
   });
 
+  ipcMain.handle('settings:getAll', async () => {
+    const rows = getDb().prepare(`SELECT key, value FROM app_settings`).all();
+    return rows.reduce((acc, r) => { acc[r.key] = r.value; return acc; }, {});
+  });
+  ipcMain.handle('settings:saveAll', async (_, data) => {
+    const db = getDb();
+    const ups = db.prepare(`INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)`);
+    for (const [key, value] of Object.entries(data)) ups.run(key, String(value));
+    return { success: true };
+  });
+
+  ipcMain.handle('settings:uploadLogo', async (_, { filePath }) => {
+    const { app, dialog } = require('electron');
+    const fs = require('fs');
+    const pathMod = require('path');
+    const dest = pathMod.join(app.getPath('userData'), 'company_logo' + pathMod.extname(filePath));
+    fs.copyFileSync(filePath, dest);
+    getDb().prepare(`UPDATE company_profile SET logo_path=? WHERE id=1`).run(dest);
+    return { success: true, logo_path: dest };
+  });
+
+  ipcMain.handle('settings:chooseLogoFile', async () => {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'Images', extensions: ['png','jpg','jpeg','gif','webp'] }] });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('settings:chooseRestoreFile', async () => {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'SQLite DB', extensions: ['db','sqlite'] }] });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths[0];
+  });
+  ipcMain.handle('settings:restoreBackup', async (_, { filePath }) => {
+    const { app } = require('electron');
+    const fs = require('fs');
+    const pathMod = require('path');
+    const dest = pathMod.join(app.getPath('userData'), 'invoicing.db');
+    fs.copyFileSync(filePath, dest);
+    getDb().prepare(`INSERT INTO backups (type,date_time,size_mb,status) VALUES ('Restore',?,0.0,'Success')`).run(new Date().toISOString());
+    return { success: true };
+  });
+
+  ipcMain.handle('products:importCSV', async (_, { rows }) => {
+    const db = getDb();
+    const catMap = {};
+    db.prepare(`SELECT id, name FROM categories`).all().forEach(c => { catMap[c.name.toLowerCase()] = c.id; });
+    const lastProd = db.prepare(`SELECT sku FROM products ORDER BY id DESC LIMIT 1`).get();
+    let seq = 1;
+    if (lastProd) { const n = parseInt(lastProd.sku.replace('ITM-',''), 10); seq = isNaN(n) ? 1 : n + 1; }
+    const ins = db.prepare(`INSERT OR IGNORE INTO products (sku,name,category_id,purchase_price,selling_price,opening_stock,current_stock,reorder_level,barcode,unit,hsn_code) VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+    const upd = db.prepare(`UPDATE products SET purchase_price=?,selling_price=?,current_stock=?,reorder_level=?,barcode=?,unit=?,hsn_code=? WHERE name=?`);
+    let inserted = 0, updated = 0;
+    for (const row of rows) {
+      const catId = catMap[(row.category||'').toLowerCase()] || null;
+      const stock = parseInt(row.current_stock||row.stock||0, 10);
+      const existing = db.prepare(`SELECT id FROM products WHERE name=?`).get(row.name);
+      if (existing) {
+        upd.run(parseFloat(row.purchase_price||0), parseFloat(row.selling_price||0), stock, parseInt(row.reorder_level||10,10), row.barcode||'', row.unit||'pcs', row.hsn_code||'', row.name);
+        updated++;
+      } else {
+        const sku = `ITM-${String(seq).padStart(3,'0')}`; seq++;
+        ins.run(sku, row.name, catId, parseFloat(row.purchase_price||0), parseFloat(row.selling_price||0), stock, stock, parseInt(row.reorder_level||10,10), row.barcode||'', row.unit||'pcs', row.hsn_code||'');
+        inserted++;
+      }
+    }
+    db.prepare(`UPDATE products SET status = CASE WHEN current_stock <= 5 THEN 'Critical' WHEN current_stock <= reorder_level THEN 'Low' ELSE 'Good' END WHERE is_active=1`).run();
+    return { success: true, inserted, updated };
+  });
+  ipcMain.handle('products:exportCSV', async () => {
+    return getDb().prepare(`SELECT p.sku,p.name,c.name as category,p.unit,p.hsn_code,p.purchase_price,p.selling_price,p.current_stock,p.reorder_level,p.barcode FROM products p LEFT JOIN categories c ON c.id=p.category_id WHERE p.is_active=1 ORDER BY p.sku`).all();
+  });
+  ipcMain.handle('products:chooseImportFile', async () => {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'CSV/Excel', extensions: ['csv','xlsx','xls'] }] });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths[0];
+  });
+  ipcMain.handle('products:chooseSaveFile', async () => {
+    const { dialog } = require('electron');
+    const result = await dialog.showSaveDialog({ defaultPath: 'products.xlsx', filters: [{ name: 'Excel', extensions: ['xlsx'] }] });
+    if (result.canceled) return null;
+    return result.filePath;
+  });
+
+  ipcMain.handle('invoices:autoComplete', async () => {
+    const db = getDb();
+    const result = db.prepare(`UPDATE invoices SET status='Completed', updated_at=datetime('now') WHERE status IN ('Paid','Credit','Active') AND CAST(julianday('now') - julianday(invoice_date) AS INTEGER) > 15`).run();
+    return { success: true, updated: result.changes };
+  });
+
   ipcMain.handle('users:getAll', async () => {
     const users = getDb().prepare(`SELECT id,name,mobile,email,role,is_active,avatar_path,created_at FROM users ORDER BY created_at`).all();
     return users;
   });
   ipcMain.handle('users:create', async (_, data) => {
     const hash = bcrypt.hashSync(data.password, 10);
-    getDb().prepare(`INSERT INTO users (name,mobile,email,password,role) VALUES (?,?,?,?,?)`).run(data.name, data.mobile, data.email, hash, data.role);
+    getDb().prepare(`INSERT INTO users (name,mobile,email,password,role,branch_id) VALUES (?,?,?,?,?,?)`).run(data.name, data.mobile, data.email, hash, data.role, data.branch_id||null);
     return { success: true };
   });
   ipcMain.handle('users:update', async (_, { id, ...data }) => {
     const db = getDb();
     if (data.password) {
       const hash = bcrypt.hashSync(data.password, 10);
-      db.prepare(`UPDATE users SET name=?,mobile=?,email=?,role=?,password=? WHERE id=?`).run(data.name, data.mobile, data.email, data.role, hash, id);
+      db.prepare(`UPDATE users SET name=?,mobile=?,email=?,role=?,branch_id=?,password=? WHERE id=?`).run(data.name, data.mobile, data.email, data.role, data.branch_id||null, hash, id);
     } else {
-      db.prepare(`UPDATE users SET name=?,mobile=?,email=?,role=? WHERE id=?`).run(data.name, data.mobile, data.email, data.role, id);
+      db.prepare(`UPDATE users SET name=?,mobile=?,email=?,role=?,branch_id=? WHERE id=?`).run(data.name, data.mobile, data.email, data.role, data.branch_id||null, id);
     }
     return { success: true };
   });
@@ -516,7 +700,25 @@ module.exports = function registerHandlers({ getDb }) {
     return { success: true };
   });
 
-  ipcMain.handle('branches:getAll', async () => getDb().prepare(`SELECT * FROM branches WHERE is_active=1`).all());
+  ipcMain.handle('branches:getAll', async () => getDb().prepare(`SELECT * FROM branches WHERE is_active=1 ORDER BY id`).all());
+  ipcMain.handle('branches:create', async (_, data) => {
+    const db = getDb();
+    const r = db.prepare(`INSERT INTO branches (name, code, address, contact, is_active) VALUES (?,?,?,?,1)`)
+      .run(data.name, data.code||'', data.address||'', data.contact||'');
+    return { success: true, id: r.lastInsertRowid };
+  });
+  ipcMain.handle('branches:update', async (_, { id, ...data }) => {
+    getDb().prepare(`UPDATE branches SET name=?,code=?,address=?,contact=? WHERE id=?`)
+      .run(data.name, data.code||'', data.address||'', data.contact||'', id);
+    return { success: true };
+  });
+  ipcMain.handle('branches:delete', async (_, { id }) => {
+    const db = getDb();
+    const hasInvoices = db.prepare(`SELECT id FROM invoices WHERE branch_id=? LIMIT 1`).get(id);
+    if (hasInvoices) return { success: false, error: 'Branch has linked invoices and cannot be deleted.' };
+    db.prepare(`UPDATE branches SET is_active=0 WHERE id=?`).run(id);
+    return { success: true };
+  });
 
   // ─── BACKUP ───────────────────────────────────────────────────────────────
   ipcMain.handle('backup:getLogs', async () => getDb().prepare(`SELECT * FROM backups ORDER BY id DESC LIMIT 20`).all());
