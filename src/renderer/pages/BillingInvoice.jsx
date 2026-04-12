@@ -219,16 +219,35 @@ function PrintPreviewModal({ invoice, onClose }) {
 // -- KebabMenu --------------------------------------------------------------
 function KebabMenu({ items }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef();
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef();
+  const menuRef = useRef();
+
   useEffect(() => {
-    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    function handler(e) {
+      if (
+        btnRef.current && !btnRef.current.contains(e.target) &&
+        menuRef.current && !menuRef.current.contains(e.target)
+      ) setOpen(false);
+    }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  function handleOpen() {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      // Position dropdown below the button, aligned to its right edge
+      setMenuPos({ top: rect.bottom + 4, left: rect.right - 180 });
+    }
+    setOpen(v => !v);
+  }
+
   return (
-    <div ref={ref} style={{ position:'relative', display:'inline-block' }}>
+    <div style={{ display:'inline-block' }}>
       <button
-        onClick={() => setOpen(v => !v)}
+        ref={btnRef}
+        onClick={handleOpen}
         style={{ background:'none', border:'1px solid #e2e8f0', cursor:'pointer', padding:'4px 10px', borderRadius:6, color:'#374151', fontSize:16, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center', gap:2 }}
         title="Actions"
       >
@@ -239,13 +258,17 @@ function KebabMenu({ items }) {
         </svg>
       </button>
       {open && (
-        <div style={{ position:'absolute', right:0, top:'100%', background:'#fff', border:'1px solid #e2e8f0', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', zIndex:200, minWidth:180 }}>
+        <div
+          ref={menuRef}
+          style={{ position:'fixed', top: menuPos.top, left: menuPos.left, background:'#fff', border:'1px solid #e2e8f0', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.15)', zIndex:9999, minWidth:180 }}
+        >
           {items.map((item, i) => (
             <div key={i} onClick={() => { item.action(); setOpen(false); }}
               style={{ padding:'10px 16px', cursor:'pointer', fontSize:13, color:item.danger?'#ef4444':'#1e293b', borderBottom:i<items.length-1?'1px solid #f1f5f9':'none', display:'flex', alignItems:'center', gap:8 }}
               onMouseEnter={e => e.currentTarget.style.background='#f8fafc'}
               onMouseLeave={e => e.currentTarget.style.background='transparent'}>
-              {item.icon && <span style={{fontSize:13, fontWeight:600, color:'#64748b', minWidth:20}}>{item.icon}</span>}{item.label}
+              {item.icon && <span style={{ fontSize:13, fontWeight:600, color:'#64748b', minWidth:20 }}>{item.icon}</span>}
+              {item.label}
             </div>
           ))}
         </div>
@@ -569,14 +592,22 @@ function InvoiceStartModal({ onClose, onNew, onResume }) {
 
 // -- CreateInvoiceForm ------------------------------------------------------
 function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
+  const { currentUser } = useAuth();
+
+  const defaultDueDate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().slice(0, 10);
+  };
+
   const [products, setProducts] = useState([]);
   const [branches, setBranches] = useState([]);
   const [sellers, setSellers] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
-  const [dueDate, setDueDate] = useState('');
+  const [dueDate, setDueDate] = useState(defaultDueDate());
   const [branchId, setBranchId] = useState('');
-  const [sellerId, setSellerId] = useState('');
+  const [sellerId, setSellerId] = useState(currentUser ? String(currentUser.id) : '');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
@@ -596,15 +627,28 @@ function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
 
   useEffect(() => {
     window.electron.invoke('products:getAll', {}).then(d => setProducts(Array.isArray(d) ? d : []));
-    window.electron.invoke('branches:getAll', {}).then(d => setBranches(Array.isArray(d) ? d : []));
+    window.electron.invoke('branches:getAll', {}).then(d => {
+      const list = Array.isArray(d) ? d : [];
+      setBranches(list);
+      // Auto-set branch only when NOT loading a draft
+      if (!initialDraft || !initialDraft.id) {
+        if (currentUser && currentUser.branch_id) {
+          // Branch-specific user: lock to their branch
+          setBranchId(String(currentUser.branch_id));
+        } else if (list.length > 0) {
+          // Admin / Owner: default to main branch (first = lowest id)
+          setBranchId(String(list[0].id));
+        }
+      }
+    });
     window.electron.invoke('users:getAll', {}).then(d => setSellers(Array.isArray(d) ? d : []));
     window.electron.invoke('customers:getAll', {}).then(d => setCustomers(Array.isArray(d) ? d : []));
     if (initialDraft && initialDraft.id) {
       setDraftId(initialDraft.id);
       setInvoiceDate(initialDraft.invoice_date || new Date().toISOString().slice(0, 10));
-      setDueDate(initialDraft.due_date || '');
-      setBranchId(initialDraft.branch_id || '');
-      setSellerId(initialDraft.seller_id || '');
+      setDueDate(initialDraft.due_date || defaultDueDate());
+      setBranchId(initialDraft.branch_id ? String(initialDraft.branch_id) : (currentUser && currentUser.branch_id ? String(currentUser.branch_id) : ''));
+      setSellerId(initialDraft.seller_id ? String(initialDraft.seller_id) : (currentUser ? String(currentUser.id) : ''));
       setCustomerName(initialDraft.customer_name || '');
       setCustomerPhone(initialDraft.customer_phone || '');
       setCustomerAddress(initialDraft.customer_address || '');
@@ -710,7 +754,13 @@ function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
               <div><label className="form-label">Invoice Date *</label><input type="date" className="form-input" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>
               <div><label className="form-label">Due Date</label><input type="date" className="form-input" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
               <div><label className="form-label">Branch</label>
-                <select className="form-select" value={branchId} onChange={e => setBranchId(e.target.value)}>
+                <select
+                  className="form-select"
+                  value={branchId}
+                  onChange={e => setBranchId(e.target.value)}
+                  disabled={!!(currentUser && currentUser.branch_id)}
+                  style={currentUser && currentUser.branch_id ? { background:'#f1f5f9', cursor:'not-allowed' } : {}}
+                >
                   <option value="">Select Branch</option>
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>

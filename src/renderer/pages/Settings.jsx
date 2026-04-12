@@ -242,7 +242,8 @@ function UserManagement() {
   useEffect(() => { loadAll(); }, []);
 
   async function saveUser() {
-    if (!form.name || !form.password || !form.role) { toast.error('Name, password and role are required'); return; }
+    if (!form.name || !form.role) { toast.error('Name and role are required'); return; }
+    if (!editing && !form.password) { toast.error('Password is required for new users'); return; }
     if (editing) {
       await window.electron.invoke('users:update', { id: editing.id, ...form });
       toast.success('User updated!');
