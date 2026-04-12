@@ -765,7 +765,7 @@ module.exports = function registerHandlers({ getDb }) {
   });
 
   ipcMain.handle('users:getAll', async () => {
-    const users = getDb().prepare(`SELECT id,name,mobile,email,role,is_active,avatar_path,created_at FROM users ORDER BY created_at`).all();
+    const users = getDb().prepare(`SELECT id,name,mobile,email,role,branch_id,is_active,avatar_path,created_at FROM users ORDER BY created_at`).all();
     return users;
   });
   ipcMain.handle('users:create', async (_, data) => {

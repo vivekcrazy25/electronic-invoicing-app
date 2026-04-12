@@ -277,10 +277,14 @@ function UserManagement() {
     setShowPerms(user);
   }
 
-  async function savePerms() {
+  async function savePerms(branchId) {
     await window.electron.invoke('permissions:saveForUser', { userId: showPerms.id, permissions: permsMap });
+    if (branchId !== undefined) {
+      await window.electron.invoke('users:update', { id: showPerms.id, name: showPerms.name, mobile: showPerms.mobile || '', email: showPerms.email || '', role: showPerms.role, branch_id: branchId || null });
+    }
     toast.success('Permissions saved!');
     setShowPerms(null);
+    loadAll();
   }
 
   function togglePerm(mod, act) {
@@ -352,7 +356,7 @@ function UserManagement() {
       )}
 
       {/* Permissions Modal */}
-      {showPerms && <PermissionsModal user={showPerms} permsMap={permsMap} onToggle={togglePerm} onSave={savePerms} onReset={async () => { await window.electron.invoke('permissions:saveForUser',{userId:showPerms.id,permissions:{}}); setShowPerms(null); toast.success('Reset to role defaults'); }} onClose={() => setShowPerms(null)} />}
+      {showPerms && <PermissionsModal user={showPerms} permsMap={permsMap} onToggle={togglePerm} onSave={(branchId) => savePerms(branchId)} onReset={async () => { await window.electron.invoke('permissions:saveForUser',{userId:showPerms.id,permissions:{}}); setShowPerms(null); toast.success('Reset to role defaults'); }} onClose={() => setShowPerms(null)} />}
 
       {/* User Types Manager */}
       <UserTypesManager onRolesChanged={loadAll} />
@@ -468,6 +472,12 @@ function UserTypesManager({ onRolesChanged }) {
 // ── PERMISSIONS MODAL ────────────────────────────────────────────────────────
 function PermissionsModal({ user, permsMap, onToggle, onSave, onReset, onClose }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState(user.branch_id || '');
+
+  useEffect(() => {
+    window.electron.invoke('branches:getAll').then(setBranches).catch(() => {});
+  }, []);
 
   // Tab is visible if `view` permission is true
   const canView = (mod) => !!permsMap?.[mod]?.view;
@@ -507,6 +517,23 @@ function PermissionsModal({ user, permsMap, onToggle, onSave, onReset, onClose }
 
         {/* Scrollable body */}
         <div style={{ overflowY:'auto', padding:'24px 28px', flex:1 }}>
+
+          {/* Branch Assignment */}
+          <div style={{ marginBottom:24 }}>
+            <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>Branch Assignment</div>
+            <div style={{ fontSize:12, color:'#64748b', marginBottom:10 }}>Assign this user to a specific branch location.</div>
+            <select
+              className="form-select"
+              value={selectedBranch}
+              onChange={e => setSelectedBranch(e.target.value)}
+              style={{ maxWidth:320 }}
+            >
+              <option value="">No specific branch (All access)</option>
+              {branches.map(b => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          </div>
 
           {/* Tab Access Section */}
           <div style={{ marginBottom:24 }}>
@@ -602,7 +629,7 @@ function PermissionsModal({ user, permsMap, onToggle, onSave, onReset, onClose }
           <button className="btn btn-outline btn-sm" onClick={onReset}>↺ Reset to Role Defaults</button>
           <div style={{ display:'flex', gap:10 }}>
             <button className="btn btn-outline" onClick={onClose}>Cancel</button>
-            <button className="btn btn-black" onClick={onSave}>Save Permissions</button>
+            <button className="btn btn-black" onClick={() => onSave(selectedBranch)}>Save Permissions</button>
           </div>
         </div>
       </div>
@@ -872,7 +899,7 @@ function CurrencyLanguage() {
         <div>
           <label className="form-label">Currency</label>
           <select className="form-select" value={settings.currency} onChange={e => {
-            const symbolMap = { INR:'₹', USD:'$', EUR:'€', GBP:'£', AED:'د.إ', ZAR:'R' };
+            const symbolMap = { INR:'₹', USD:'$', EUR:'€', GBP:'£', AED:'د.إ', ZAR:'R', XOF:'FCFA', XAF:'FCFA' };
             setSettings(p => ({...p, currency:e.target.value, currency_symbol: symbolMap[e.target.value] || p.currency_symbol }));
           }}>
             <option value="INR">INR — Indian Rupee (₹)</option>
@@ -881,6 +908,8 @@ function CurrencyLanguage() {
             <option value="GBP">GBP — British Pound (£)</option>
             <option value="AED">AED — UAE Dirham (د.إ)</option>
             <option value="ZAR">ZAR — South African Rand (R)</option>
+            <option value="XOF">XOF — West African CFA Franc (FCFA)</option>
+            <option value="XAF">XAF — Central African CFA Franc (FCFA)</option>
           </select>
         </div>
         <div>
@@ -893,6 +922,9 @@ function CurrencyLanguage() {
             <optgroup label="English">
               <option value="en">English</option>
               <option value="en-ZA">English (South Africa)</option>
+            </optgroup>
+            <optgroup label="French">
+              <option value="fr">Français (French)</option>
             </optgroup>
             <optgroup label="South African Languages">
               <option value="af">Afrikaans</option>

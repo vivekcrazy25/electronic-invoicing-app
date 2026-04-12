@@ -4,96 +4,216 @@ import toast from 'react-hot-toast';
 import { useBarcodeGun } from '../hooks/useBarcodeGun';
 import BarcodeScanner from '../components/BarcodeScanner';
 
-// -- Print Invoice ----------------------------------------------------------
-function printInvoice(invoice) {
-  if (!invoice) return;
+// -- Print Preview Modal ----------------------------------------------------
+function PrintPreviewModal({ invoice, onClose }) {
+  if (!invoice) return null;
   const items = invoice.items || [];
-  const rows = items.map((it, i) => `
-    <tr>
-      <td>${i + 1}</td>
-      <td>${it.product_name || it.name || ''}</td>
-      <td>${it.product_code || it.sku || ''}</td>
-      <td style="text-align:center">${it.qty}</td>
-      <td style="text-align:right">Rs.${Number(it.rate).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
-      <td style="text-align:right">Rs.${Number(it.amount).toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
-    </tr>`).join('');
+  const fmt = v => Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+  const statusColors = { Paid:'#065f46', Credit:'#1e40af', Draft:'#475569', Completed:'#065f46', Overdue:'#991b1b' };
+  const statusBg    = { Paid:'#d1fae5', Credit:'#dbeafe', Draft:'#f1f5f9', Completed:'#d1fae5', Overdue:'#fee2e2' };
 
-  const html = `<!DOCTYPE html><html><head><title>Invoice ${invoice.invoice_no}</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: Arial, sans-serif; font-size: 13px; color: #111; padding: 32px; }
-    .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; padding-bottom:16px; border-bottom:2px solid #111; }
-    .company-name { font-size:22px; font-weight:700; }
-    .company-info { font-size:12px; color:#555; margin-top:4px; line-height:1.6; }
-    .invoice-title { font-size:28px; font-weight:700; color:#111; text-align:right; }
-    .invoice-meta { font-size:12px; text-align:right; color:#555; margin-top:4px; line-height:1.8; }
-    .bill-to { margin:20px 0; display:flex; justify-content:space-between; }
-    .bill-box { background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:14px 18px; flex:1; margin-right:12px; }
-    .bill-box:last-child { margin-right:0; }
-    .bill-box label { font-size:10px; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:6px; }
-    table { width:100%; border-collapse:collapse; margin:20px 0; }
-    th { background:#111; color:#fff; padding:10px 12px; text-align:left; font-size:12px; }
-    td { padding:9px 12px; border-bottom:1px solid #f1f5f9; font-size:13px; }
-    tr:nth-child(even) td { background:#f8fafc; }
-    .totals { margin-left:auto; width:260px; }
-    .totals-row { display:flex; justify-content:space-between; padding:5px 0; font-size:13px; }
-    .totals-row.grand { font-weight:700; font-size:16px; border-top:2px solid #111; padding-top:8px; margin-top:4px; }
-    .status-badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700; }
-    .status-Paid { background:#d1fae5; color:#065f46; }
-    .status-Credit { background:#dbeafe; color:#1e40af; }
-    .status-Draft { background:#f1f5f9; color:#475569; }
-    .footer { margin-top:32px; padding-top:16px; border-top:1px solid #e2e8f0; font-size:12px; color:#64748b; }
-    .payment-badge { font-size:12px; background:#f1f5f9; padding:4px 10px; border-radius:6px; display:inline-block; margin-top:4px; }
-    @media print { body { padding:16px; } button { display:none; } }
-  </style></head><body>
-  <div class="header">
-    <div>
-      <div class="company-name">Acme Electricals</div>
-      <div class="company-info">123 Market Street, Mumbai, India<br>+91-9876543210 | info@acme.com</div>
-    </div>
-    <div>
-      <div class="invoice-title">INVOICE</div>
-      <div class="invoice-meta">
-        <b>${invoice.invoice_no}</b><br>
-        Date: ${invoice.invoice_date}<br>
-        ${invoice.due_date ? `Due: ${invoice.due_date}<br>` : ''}
-        Status: <span class="status-badge status-${invoice.status}">${invoice.status}</span>
+  function doPrint() {
+    const fmt = v => Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const sColor = { Paid:'#065f46', Credit:'#1e40af', Draft:'#475569', Completed:'#065f46', Overdue:'#991b1b' };
+    const sBg    = { Paid:'#d1fae5', Credit:'#dbeafe', Draft:'#f1f5f9', Completed:'#d1fae5', Overdue:'#fee2e2' };
+    const rows = items.map((it, i) => `
+      <tr style="background:${i%2===1?'#f8fafc':'#fff'}">
+        <td style="padding:9px 12px;border-bottom:1px solid #f1f5f9">${i+1}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #f1f5f9">${it.product_name||it.name||''}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b">${it.product_code||it.sku||''}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:center">${it.qty}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:right">Rs.${fmt(it.rate)}</td>
+        <td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600">Rs.${fmt(it.amount)}</td>
+      </tr>`).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice ${invoice.invoice_no}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,sans-serif;font-size:13px;color:#111;padding:32px}
+      table{width:100%;border-collapse:collapse}
+      th{background:#111;color:#fff;padding:10px 12px;text-align:left;font-size:12px}
+      .grand{font-weight:700;font-size:16px;border-top:2px solid #111;padding-top:8px;margin-top:4px}
+    </style></head><body>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #111">
+      <div>
+        <div style="font-size:22px;font-weight:700">Acme Electricals</div>
+        <div style="font-size:12px;color:#555;margin-top:4px;line-height:1.7">123 Market Street, Mumbai, India<br>+91-9876543210 | info@acme.com</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:28px;font-weight:700">INVOICE</div>
+        <div style="font-size:12px;color:#555;margin-top:4px;line-height:1.8">
+          <strong>${invoice.invoice_no}</strong><br>Date: ${invoice.invoice_date}<br>
+          ${invoice.due_date?`Due: ${invoice.due_date}<br>`:''}
+          <span style="display:inline-block;margin-top:4px;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;background:${sBg[invoice.status]||'#f1f5f9'};color:${sColor[invoice.status]||'#111'}">${invoice.status}</span>
+        </div>
       </div>
     </div>
-  </div>
-
-  <div class="bill-to">
-    <div class="bill-box">
-      <label>Bill To</label>
-      <div style="font-weight:600;font-size:14px">${invoice.customer_name || 'Walk-in Customer'}</div>
-      ${invoice.customer_phone ? `<div style="color:#555;margin-top:3px">Ph: ${invoice.customer_phone}</div>` : ''}
-      ${invoice.customer_address ? `<div style="color:#555;margin-top:3px">${invoice.customer_address}</div>` : ''}
+    <div style="display:flex;gap:16px;margin-bottom:20px">
+      <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:14px 18px">
+        <div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Bill To</div>
+        <div style="font-weight:600;font-size:14px">${invoice.customer_name||'Walk-in Customer'}</div>
+        ${invoice.customer_phone?`<div style="font-size:12px;color:#555;margin-top:3px">Ph: ${invoice.customer_phone}</div>`:''}
+      </div>
+      <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:14px 18px">
+        <div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Payment</div>
+        <div style="font-size:12px;background:#f1f5f9;padding:4px 10px;border-radius:6px;display:inline-block">${invoice.payment_mode||'Cash'}</div>
+        ${invoice.is_credit_sale?'<div style="color:#b45309;margin-top:6px;font-size:12px">Credit Sale</div>':''}
+      </div>
     </div>
-    <div class="bill-box">
-      <label>Payment Details</label>
-      <div class="payment-badge">${invoice.payment_mode || 'Cash'}</div>
-      ${invoice.is_credit_sale ? '<div style="color:#b45309;margin-top:6px;font-size:12px">Credit Sale - Payment Pending</div>' : ''}
+    <table style="margin:4px 0 20px">
+      <thead><tr><th>#</th><th>Product</th><th>SKU</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-left:auto;width:280px">
+      ${invoice.subtotal>0?`<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px"><span>Subtotal</span><span>Rs.${fmt(invoice.subtotal)}</span></div>`:''}
+      ${invoice.tax_amount>0?`<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px"><span>Tax</span><span>Rs.${fmt(invoice.tax_amount)}</span></div>`:''}
+      <div class="grand" style="display:flex;justify-content:space-between;padding:8px 0 5px"><span>Grand Total</span><span>Rs.${fmt(invoice.grand_total)}</span></div>
     </div>
-  </div>
+    ${invoice.internal_notes?`<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b"><strong>Notes:</strong> ${invoice.internal_notes}</div>`:''}
+    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center">Thank you for your business!</div>
+    </body></html>`;
 
-  <table>
-    <thead><tr><th>#</th><th>Product</th><th>SKU</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
+    // Hidden iframe — prints without touching the React app
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;border:0;opacity:0';
+    document.body.appendChild(iframe);
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 2000);
+    }, 400);
+  }
 
-  <div class="totals">
-    ${invoice.subtotal > 0 ? `<div class="totals-row"><span>Subtotal</span><span>Rs.${Number(invoice.subtotal).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>` : ''}
-    ${invoice.tax_amount > 0 ? `<div class="totals-row"><span>Tax</span><span>Rs.${Number(invoice.tax_amount).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>` : ''}
-    <div class="totals-row grand"><span>Grand Total</span><span>Rs.${Number(invoice.grand_total).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>
-  </div>
+  // Keyboard shortcuts: Ctrl+P → print, Escape → close
+  useEffect(() => {
+    function onKey(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+        e.preventDefault();
+        doPrint();
+      }
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
-  ${invoice.internal_notes ? `<div class="footer"><strong>Notes:</strong> ${invoice.internal_notes}</div>` : ''}
-  </body></html>`;
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.65)', zIndex:9999, display:'flex', flexDirection:'column', alignItems:'center', overflowY:'auto', padding:'24px 16px' }}>
+      {/* Toolbar */}
+      <div style={{ width:720, display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+        <span style={{ color:'#fff', fontWeight:600, fontSize:15 }}>Print Preview &mdash; {invoice.invoice_no}</span>
+        <div style={{ display:'flex', gap:8 }}>
+          <button onClick={doPrint} title="Print (Ctrl+P)" style={{ background:'#111', color:'#fff', border:'none', borderRadius:8, padding:'8px 22px', fontWeight:700, cursor:'pointer', fontSize:14 }}>
+            Print &nbsp;<span style={{ fontSize:11, fontWeight:400, opacity:0.7, background:'rgba(255,255,255,0.15)', borderRadius:4, padding:'2px 6px' }}>Ctrl+P</span>
+          </button>
+          <button onClick={onClose} title="Close (Esc)" style={{ background:'#fff', color:'#111', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 18px', fontWeight:600, cursor:'pointer', fontSize:14 }}>
+            Close &nbsp;<span style={{ fontSize:11, fontWeight:400, opacity:0.5, background:'#f1f5f9', borderRadius:4, padding:'2px 6px' }}>Esc</span>
+          </button>
+        </div>
+      </div>
 
-  const win = window.open('', '_blank', 'width=800,height=700');
-  win.document.write(html);
-  win.document.close();
-  win.onload = () => { win.print(); win.close(); };
+      {/* Invoice Paper */}
+      <div id="invoice-print-area" style={{ width:720, background:'#fff', borderRadius:10, boxShadow:'0 8px 40px rgba(0,0,0,0.25)', padding:'40px 48px', fontFamily:'Arial, sans-serif', fontSize:13, color:'#111' }}>
+
+        {/* Header */}
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:24, paddingBottom:16, borderBottom:'2px solid #111' }}>
+          <div>
+            <div style={{ fontSize:22, fontWeight:700 }}>Acme Electricals</div>
+            <div style={{ fontSize:12, color:'#555', marginTop:4, lineHeight:1.7 }}>
+              123 Market Street, Mumbai, India<br />
+              +91-9876543210 &nbsp;|&nbsp; info@acme.com
+            </div>
+          </div>
+          <div style={{ textAlign:'right' }}>
+            <div style={{ fontSize:28, fontWeight:700 }}>INVOICE</div>
+            <div style={{ fontSize:12, color:'#555', marginTop:4, lineHeight:1.8 }}>
+              <strong>{invoice.invoice_no}</strong><br />
+              Date: {invoice.invoice_date}<br />
+              {invoice.due_date && <>Due: {invoice.due_date}<br /></>}
+              <span style={{ display:'inline-block', marginTop:4, padding:'2px 10px', borderRadius:12, fontSize:11, fontWeight:700, background: statusBg[invoice.status]||'#f1f5f9', color: statusColors[invoice.status]||'#111' }}>
+                {invoice.status}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Bill To & Payment */}
+        <div style={{ display:'flex', gap:16, marginBottom:20 }}>
+          <div style={{ flex:1, background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:6, padding:'14px 18px' }}>
+            <div style={{ fontSize:10, fontWeight:700, color:'#888', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 }}>Bill To</div>
+            <div style={{ fontWeight:600, fontSize:14 }}>{invoice.customer_name || 'Walk-in Customer'}</div>
+            {invoice.customer_phone && <div style={{ fontSize:12, color:'#555', marginTop:3 }}>Ph: {invoice.customer_phone}</div>}
+            {invoice.customer_address && <div style={{ fontSize:12, color:'#555', marginTop:3 }}>{invoice.customer_address}</div>}
+          </div>
+          <div style={{ flex:1, background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:6, padding:'14px 18px' }}>
+            <div style={{ fontSize:10, fontWeight:700, color:'#888', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 }}>Payment Details</div>
+            <div style={{ fontSize:12, background:'#f1f5f9', padding:'4px 10px', borderRadius:6, display:'inline-block' }}>{invoice.payment_mode || 'Cash'}</div>
+            {!!invoice.is_credit_sale && <div style={{ color:'#b45309', marginTop:6, fontSize:12 }}>Credit Sale &mdash; Payment Pending</div>}
+          </div>
+        </div>
+
+        {/* Items Table */}
+        <table style={{ width:'100%', borderCollapse:'collapse', margin:'4px 0 20px' }}>
+          <thead>
+            <tr>
+              {['#','Product','SKU','Qty','Rate','Amount'].map((h, i) => (
+                <th key={i} style={{ background:'#111', color:'#fff', padding:'10px 12px', textAlign: i>=3?'center':'left', fontSize:12 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it, i) => (
+              <tr key={i} style={{ background: i%2===1?'#f8fafc':'#fff' }}>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f1f5f9' }}>{i+1}</td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f1f5f9' }}>{it.product_name || it.name || ''}</td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f1f5f9', fontSize:12, color:'#64748b' }}>{it.product_code || it.sku || ''}</td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f1f5f9', textAlign:'center' }}>{it.qty}</td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f1f5f9', textAlign:'right' }}>Rs.{fmt(it.rate)}</td>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f1f5f9', textAlign:'right', fontWeight:600 }}>Rs.{fmt(it.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Totals */}
+        <div style={{ marginLeft:'auto', width:280 }}>
+          {invoice.subtotal > 0 && (
+            <div style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', fontSize:13 }}>
+              <span>Subtotal</span><span>Rs.{fmt(invoice.subtotal)}</span>
+            </div>
+          )}
+          {invoice.tax_amount > 0 && (
+            <div style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', fontSize:13 }}>
+              <span>Tax</span><span>Rs.{fmt(invoice.tax_amount)}</span>
+            </div>
+          )}
+          <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 0 5px', fontSize:16, fontWeight:700, borderTop:'2px solid #111', marginTop:4 }}>
+            <span>Grand Total</span><span>Rs.{fmt(invoice.grand_total)}</span>
+          </div>
+          {invoice.paid_amount > 0 && invoice.is_credit_sale && (
+            <div style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', fontSize:13, color:'#16a34a' }}>
+              <span>Paid</span><span>Rs.{fmt(invoice.paid_amount)}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Notes */}
+        {invoice.internal_notes && (
+          <div style={{ marginTop:32, paddingTop:16, borderTop:'1px solid #e2e8f0', fontSize:12, color:'#64748b' }}>
+            <strong>Notes:</strong> {invoice.internal_notes}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ marginTop:32, paddingTop:16, borderTop:'1px solid #e2e8f0', fontSize:11, color:'#94a3b8', textAlign:'center' }}>
+          Thank you for your business!
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // -- KebabMenu --------------------------------------------------------------
@@ -135,7 +255,7 @@ function KebabMenu({ items }) {
 }
 
 // -- ViewInvoiceModal -------------------------------------------------------
-function ViewInvoiceModal({ invoiceId, onClose, onReturn }) {
+function ViewInvoiceModal({ invoiceId, onClose, onReturn, onPrint }) {
   const [inv, setInv] = useState(null);
   useEffect(() => {
     window.electron.invoke('invoices:getById', { id: invoiceId }).then(setInv);
@@ -157,7 +277,7 @@ function ViewInvoiceModal({ invoiceId, onClose, onReturn }) {
             <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>{inv.invoice_date} &middot; <span style={{ color:statusColor, fontWeight:600 }}>{inv.status}</span></div>
           </div>
           <div style={{ display:'flex', gap:8 }}>
-            <button className="btn btn-outline btn-sm" onClick={() => printInvoice(inv)}>Print</button>
+            <button className="btn btn-outline btn-sm" onClick={() => onPrint && onPrint(inv)}>Print</button>
             {(inv.status === 'Paid' || inv.status === 'Credit') && (
               <button className="btn btn-outline btn-sm" style={{ color:'#f97316', borderColor:'#f97316' }} onClick={() => { onClose(); onReturn(inv); }}>Return / Exchange</button>
             )}
@@ -256,7 +376,7 @@ function UpdatePaymentModal({ invoice, onClose, onUpdated }) {
         <div className="form-group">
           <label className="form-label">Payment Mode</label>
           <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            {['Cash','Card','UPI','EFT'].map(m => (
+            {['Cash','Card'].map(m => (
               <button key={m} type="button" onClick={() => setMode(m)}
                 style={{ padding:'6px 16px', borderRadius:20, border:'1px solid', fontSize:12, cursor:'pointer', fontWeight:500,
                   background: mode===m?'#111':'#fff', color: mode===m?'#fff':'#64748b', borderColor: mode===m?'#111':'#e2e8f0' }}>
@@ -671,7 +791,7 @@ function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
           <div>
             <div style={{ fontWeight:600, marginBottom:10, fontSize:14 }}>Payment Mode</div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-              {['Cash','Card','UPI','EFT','Split'].map(m => (
+              {['Cash','Card'].map(m => (
                 <button key={m} type="button" onClick={() => setPaymentMode(m)}
                   style={{ padding:'6px 14px', borderRadius:20, border:'1px solid', fontSize:12, cursor:'pointer', fontWeight:500,
                     background: paymentMode===m?'#1e293b':'#fff', color: paymentMode===m?'#fff':'#64748b', borderColor: paymentMode===m?'#1e293b':'#e2e8f0' }}>
@@ -679,12 +799,6 @@ function CreateInvoiceForm({ onClose, onSaved, initialDraft }) {
                 </button>
               ))}
             </div>
-            {paymentMode === 'Split' && (
-              <div style={{ marginTop:12, display:'flex', gap:8 }}>
-                <div style={{ flex:1 }}><label className="form-label" style={{ fontSize:11 }}>Cash Amount</label><input type="number" className="form-input" placeholder="0" value={splitCash} onChange={e => setSplitCash(e.target.value)} /></div>
-                <div style={{ flex:1 }}><label className="form-label" style={{ fontSize:11 }}>Card Amount</label><input type="number" className="form-input" placeholder="0" value={splitCard} onChange={e => setSplitCard(e.target.value)} /></div>
-              </div>
-            )}
           </div>
 
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 16px', background:'#f8fafc', borderRadius:8, border:'1px solid #e2e8f0' }}>
@@ -830,6 +944,7 @@ export default function BillingInvoice() {
   const [returnInvoice, setReturnInvoice] = useState(null);
   const [payInvoice, setPayInvoice] = useState(null);
   const [showReturnPicker, setShowReturnPicker] = useState(false);
+  const [printPreview, setPrintPreview] = useState(null);
   const { can } = useAuth();
 
   useEffect(() => { loadInvoices(); }, [search, statusFilter]);
@@ -870,6 +985,8 @@ export default function BillingInvoice() {
 
   return (
     <div>
+      {printPreview && <PrintPreviewModal invoice={printPreview} onClose={() => setPrintPreview(null)} />}
+
       {showStartModal && <InvoiceStartModal onClose={() => setShowStartModal(false)} onNew={handleNewInvoice} onResume={handleResumeDraft} />}
 
       {viewInvoice && (
@@ -877,6 +994,7 @@ export default function BillingInvoice() {
           invoiceId={viewInvoice}
           onClose={() => setViewInvoice(null)}
           onReturn={inv => { setViewInvoice(null); setReturnInvoice(inv); }}
+          onPrint={inv => { setViewInvoice(null); setPrintPreview(inv); }}
         />
       )}
 
@@ -960,7 +1078,7 @@ export default function BillingInvoice() {
                         { label:'View Details', icon:'[+]', action:() => setViewInvoice(inv.id) },
                         { label:'Print', icon:'[P]', action:async () => {
                           const full = await window.electron.invoke('invoices:getById', { id: inv.id });
-                          printInvoice(full);
+                          setPrintPreview(full);
                         }},
                         ...(inv.status === 'Credit' ? [{ label:'Mark as Paid', icon:'[$]', action:() => setPayInvoice(inv) }] : []),
                         ...((inv.status === 'Paid' || inv.status === 'Credit') ? [{ label:'Return / Exchange', icon:'[R]', action:() => setReturnInvoice(inv) }] : []),

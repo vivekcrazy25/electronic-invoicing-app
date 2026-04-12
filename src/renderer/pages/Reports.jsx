@@ -144,11 +144,11 @@ export default function Reports() {
 
         {/* Stat cards */}
         {stats.card1 && (
-          <div className="stat-cards" style={{ marginBottom:20 }}>
+          <div className="stat-cards" style={{ marginBottom:20, gridTemplateColumns:'repeat(4, 1fr)' }}>
             {[stats.card1, stats.card2, stats.card3, stats.card4].filter(Boolean).map((c,i) => (
-              <div key={i} className={['card blue','card pink','card yellow','card green'][i]} style={{ borderRadius:12, padding:18, background: ['#dbeafe','#fce7f3','#fef9c3','#dcfce7'][i] }}>
+              <div key={i} style={{ borderRadius:12, padding:'14px 16px', minHeight:90, background: ['#dbeafe','#fce7f3','#fef9c3','#dcfce7'][i], position:'relative' }}>
                 <div style={{ fontSize:12, color:'#6b7280' }}>{c.label}</div>
-                <div style={{ fontSize:24, fontWeight:700, marginTop:6 }}>{c.val}</div>
+                <div style={{ fontSize:20, fontWeight:700, marginTop:6 }}>{c.val}</div>
               </div>
             ))}
           </div>

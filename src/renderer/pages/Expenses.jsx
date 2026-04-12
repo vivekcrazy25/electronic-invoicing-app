@@ -45,11 +45,27 @@ export default function Expenses() {
         <div className="page-subtitle">Track And Manage Business Expenses</div>
       </div>
 
-      <div className="stat-cards">
-        <div className="stat-card blue"><div className="stat-card-label">Total Expenses (This Month)</div><div className="stat-card-value">${stats.total?.toLocaleString()}</div><div className="stat-card-icon">💳</div></div>
-        <div className="stat-card pink"><div className="stat-card-label">Rent</div><div className="stat-card-value">${getVal('Rent & Office').toLocaleString()}</div><div className="stat-card-icon">🏢</div></div>
-        <div className="stat-card yellow"><div className="stat-card-label">Electricity</div><div className="stat-card-value">${getVal('Utilities').toLocaleString()}</div><div className="stat-card-icon">⚡</div></div>
-        <div className="stat-card green"><div className="stat-card-label">Salary</div><div className="stat-card-value">${getVal('Payroll & Salary').toLocaleString()}</div><div className="stat-card-icon">💼</div></div>
+      <div className="stat-cards" style={{ gridTemplateColumns:'repeat(4, 1fr)' }}>
+        <div className="stat-card blue" style={{ minHeight:100, padding:'16px 18px' }}>
+          <div className="stat-card-label">Total Expenses (This Month)</div>
+          <div className="stat-card-value" style={{ fontSize:20, margin:'6px 0 0' }}>${(stats.total||0).toLocaleString()}</div>
+          <div className="stat-card-icon" style={{ fontSize:18, top:14, right:14 }}>&#128179;</div>
+        </div>
+        <div className="stat-card pink" style={{ minHeight:100, padding:'16px 18px' }}>
+          <div className="stat-card-label">Rent</div>
+          <div className="stat-card-value" style={{ fontSize:20, margin:'6px 0 0' }}>${getVal('Rent & Office').toLocaleString()}</div>
+          <div className="stat-card-icon" style={{ fontSize:18, top:14, right:14 }}>&#127970;</div>
+        </div>
+        <div className="stat-card yellow" style={{ minHeight:100, padding:'16px 18px' }}>
+          <div className="stat-card-label">Electricity</div>
+          <div className="stat-card-value" style={{ fontSize:20, margin:'6px 0 0' }}>${getVal('Utilities').toLocaleString()}</div>
+          <div className="stat-card-icon" style={{ fontSize:18, top:14, right:14 }}>&#9889;</div>
+        </div>
+        <div className="stat-card green" style={{ minHeight:100, padding:'16px 18px' }}>
+          <div className="stat-card-label">Salary</div>
+          <div className="stat-card-value" style={{ fontSize:20, margin:'6px 0 0' }}>${getVal('Payroll & Salary').toLocaleString()}</div>
+          <div className="stat-card-icon" style={{ fontSize:18, top:14, right:14 }}>&#128188;</div>
+        </div>
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns:'1fr 300px', gap:20 }}>

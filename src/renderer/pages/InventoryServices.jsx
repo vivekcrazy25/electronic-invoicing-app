@@ -192,6 +192,7 @@ export default function InventoryServices() {
   const [branches, setBranches] = useState([]);
   const [selectedBranch, setSelectedBranch] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
   const { can } = useAuth();
 
@@ -210,7 +211,9 @@ export default function InventoryServices() {
       .then(data => setCategories(Array.isArray(data) ? data : []));
   }
 
-  async function handleImportCSV() {
+  function handleImportCSV() { setShowImportModal(true); }
+
+  async function doImport() {
     try {
       const filePath = await window.electron.invoke('products:chooseImportFile');
       if (!filePath) return;
@@ -242,6 +245,7 @@ export default function InventoryServices() {
       const result = await window.electron.invoke('products:importCSV', { rows });
       if (result.success) {
         toast.success(`Import complete: ${result.inserted} added, ${result.updated} updated`);
+        setShowImportModal(false);
         loadAll();
       } else {
         toast.error('Import failed');
@@ -282,33 +286,117 @@ export default function InventoryServices() {
   const statusBadge = s => s === 'Good' ? 'badge-green' : s === 'Low' ? 'badge-orange' : 'badge-red';
   const stockColor = s => s === 'Good' ? '#16a34a' : s === 'Low' ? '#d97706' : '#dc2626';
 
+  function downloadTemplate() {
+    const header = 'name,category,purchase_price,selling_price,current_stock,reorder_level,unit,hsn_code,barcode';
+    const sample = [
+      'Wireless Mouse,Electronics,450,799,50,10,pcs,84716060,8901234567890',
+      'Office Chair,Furniture,3500,5999,20,5,pcs,,',
+      'A4 Paper Ream,Stationery,180,250,100,20,ream,48023900,',
+    ].join('\n');
+    const csv = header + '\n' + sample;
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'products_import_template.csv';
+    a.click(); URL.revokeObjectURL(url);
+  }
+
   return (
     <div>
+      {/* Import CSV Modal */}
+      {showImportModal && (
+        <div className="modal-overlay" onClick={() => setShowImportModal(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background:'#fff', borderRadius:16, width:640, boxShadow:'0 24px 80px rgba(0,0,0,0.18)', overflow:'hidden' }}>
+            {/* Header */}
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div>
+                <div style={{ fontWeight:700, fontSize:17 }}>Import Products via CSV</div>
+                <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>Upload a CSV file to bulk add or update products</div>
+              </div>
+              <button onClick={() => setShowImportModal(false)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:'#94a3b8' }}>&#10005;</button>
+            </div>
+
+            <div style={{ padding:'20px 24px' }}>
+              {/* Format table */}
+              <div style={{ fontWeight:600, fontSize:13, marginBottom:10 }}>Required CSV Format</div>
+              <div style={{ overflowX:'auto', marginBottom:16 }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                  <thead>
+                    <tr style={{ background:'#111', color:'#fff' }}>
+                      {['Column','Example','Required?','Notes'].map(h => (
+                        <th key={h} style={{ padding:'8px 12px', textAlign:'left', fontWeight:600 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      ['name',           'Wireless Mouse',    'Yes', 'Unique product name'],
+                      ['category',       'Electronics',       'No',  'Must match existing category'],
+                      ['purchase_price', '450',               'No',  'Cost price (number)'],
+                      ['selling_price',  '799',               'No',  'Selling price (number)'],
+                      ['current_stock',  '50',                'No',  'Opening stock quantity'],
+                      ['reorder_level',  '10',                'No',  'Low stock threshold'],
+                      ['unit',           'pcs',               'No',  'pcs / kg / ltr / box etc.'],
+                      ['hsn_code',       '84716060',          'No',  'HSN/SAC code'],
+                      ['barcode',        '8901234567890',     'No',  'Barcode / EAN'],
+                    ].map(([col, ex, req, note], i) => (
+                      <tr key={col} style={{ background: i%2===0?'#f8fafc':'#fff' }}>
+                        <td style={{ padding:'7px 12px', fontWeight:600, color:'#111', fontFamily:'monospace' }}>{col}</td>
+                        <td style={{ padding:'7px 12px', color:'#64748b' }}>{ex}</td>
+                        <td style={{ padding:'7px 12px' }}>
+                          <span style={{ padding:'2px 8px', borderRadius:99, fontSize:11, fontWeight:700, background: req==='Yes'?'#fee2e2':'#f1f5f9', color: req==='Yes'?'#991b1b':'#64748b' }}>{req}</span>
+                        </td>
+                        <td style={{ padding:'7px 12px', color:'#64748b', fontSize:11 }}>{note}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Tips */}
+              <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#92400e', marginBottom:20 }}>
+                <strong>Tips:</strong> First row must be the header. Existing products (matched by name) will be updated, new names will be inserted. Leave optional columns blank — do not remove them.
+              </div>
+
+              {/* Actions */}
+              <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+                <button className="btn btn-outline" onClick={downloadTemplate}>
+                  &#8595; Download Template
+                </button>
+                <button className="btn btn-black" onClick={doImport}>
+                  &#8593; Choose File &amp; Import
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="page-header">
         <div className="page-title">Inventory &amp; Services</div>
         <div className="page-subtitle">Manage Stock And Products</div>
       </div>
 
-      <div className="stat-cards">
-        <div className="stat-card blue">
+      <div className="stat-cards" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+        <div className="stat-card blue" style={{ minHeight: 100, padding: '16px 18px' }}>
           <div className="stat-card-label">Total Items</div>
-          <div className="stat-card-value">{stats.total || 0}</div>
-          <div className="stat-card-icon">📦</div>
+          <div className="stat-card-value" style={{ fontSize: 26, margin: '6px 0 0' }}>{stats.total || 0}</div>
+          <div className="stat-card-icon" style={{ fontSize: 18, top: 14, right: 14 }}>&#128230;</div>
         </div>
-        <div className="stat-card pink">
+        <div className="stat-card pink" style={{ minHeight: 100, padding: '16px 18px' }}>
           <div className="stat-card-label">Low Stock Alert</div>
-          <div className="stat-card-value">{stats.lowAlert || 0}</div>
-          <div className="stat-card-icon">⚠️</div>
+          <div className="stat-card-value" style={{ fontSize: 26, margin: '6px 0 0' }}>{stats.lowAlert || 0}</div>
+          <div className="stat-card-icon" style={{ fontSize: 18, top: 14, right: 14 }}>&#9888;</div>
         </div>
-        <div className="stat-card yellow">
+        <div className="stat-card yellow" style={{ minHeight: 100, padding: '16px 18px' }}>
           <div className="stat-card-label">Stock Value (Cost)</div>
-          <div className="stat-card-value">₹{(stats.costVal || 0).toLocaleString()}</div>
-          <div className="stat-card-icon">💵</div>
+          <div className="stat-card-value" style={{ fontSize: 20, margin: '6px 0 0' }}>Rs.{(stats.costVal || 0).toLocaleString()}</div>
+          <div className="stat-card-icon" style={{ fontSize: 18, top: 14, right: 14 }}>&#128181;</div>
         </div>
-        <div className="stat-card green">
+        <div className="stat-card green" style={{ minHeight: 100, padding: '16px 18px' }}>
           <div className="stat-card-label">Stock Value (Selling)</div>
-          <div className="stat-card-value">₹{(stats.sellVal || 0).toLocaleString()}</div>
-          <div className="stat-card-icon">📈</div>
+          <div className="stat-card-value" style={{ fontSize: 20, margin: '6px 0 0' }}>Rs.{(stats.sellVal || 0).toLocaleString()}</div>
+          <div className="stat-card-icon" style={{ fontSize: 18, top: 14, right: 14 }}>&#128200;</div>
         </div>
       </div>
 
